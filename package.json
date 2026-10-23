@@ -1,0 +1,23 @@
+{
+  "name": "jamula-family-coordinator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy --keep-vars",
+    "assets": "node scripts/build-assets.mjs",
+    "build": "npm run assets && wrangler deploy --dry-run --outdir build",
+    "ci": "node scripts/ci.mjs",
+    "migrate:production": "wrangler d1 migrations apply jamula-family-coordinator --remote"
+  },
+  "dependencies": {
+    "jose": "6.2.13"
+  },
+  "devDependencies": {
+    "wrangler": "4.152.0"
+  },
+  "engines": {
+    "node": ">=24 <25"
+  }
+}

@@ -1,0 +1,2 @@
+self.addEventListener('push',event=>event.waitUntil(self.registration.showNotification('Family Hub',{body:'There is a new update in your hub. Sign in to view it.',tag:'family-hub-update',renotify:false,data:{url:'/'}})));
+self.addEventListener('notificationclick',event=>{event.notification.close();event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(async list=>{for(const client of list)if(new URL(client.url).origin===self.location.origin){await client.focus();return;}await clients.openWindow('/');}));});

@@ -1,0 +1,17 @@
+import {spawnSync} from 'node:child_process';
+import {readdir,readFile} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const run=(command,args)=>{const r=spawnSync(command,args,{stdio:'inherit',shell:false});if(r.error)throw r.error;if(r.status!==0)process.exit(r.status||1);};
+const config=JSON.parse(await readFile('wrangler.jsonc','utf8'));
+assert.equal(config.name,'jamula-family-coordinator');
+assert.equal(config.workers_dev,true,'Keep the existing protected app URL enabled');
+assert.equal(config.preview_urls,false,'Do not expose production-bound preview URLs');
+assert.equal(config.assets.run_worker_first,true,'Authenticate before all static assets');
+assert.equal(config.keep_vars,true,'Preserve dashboard runtime variables');
+assert.equal(config.d1_databases[0].database_id,'d5437b6e-54ca-44b1-860d-e27c9064fb2b','Do not provision or replace production data');
+assert.match(config.vars.ACCESS_TEAM_DOMAIN,/^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/);
+assert.ok(config.vars.ACCESS_AUD.length>30);
+for(const folder of ['src','public','scripts','test'])for(const file of await readdir(folder))if(/\.(m?js)$/.test(file))run(process.execPath,['--check',folder+'/'+file]);
+run('npm',['test']);
+run('npm',['run','build']);
+console.log('Validation passed. No live deployment, Google call or database mutation was performed.');
