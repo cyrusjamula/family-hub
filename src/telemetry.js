@@ -1,0 +1,53 @@
+import {member} from './policy.js';
+
+const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
+const routes=new Set(['/','/api/me','/api/briefs','/api/messages','/api/approvals','/api/notifications','/api/chat','/api/propose','/api/approve','/api/private-ai','/api/google/status','/api/google/connect','/api/google/callback','/api/google/disconnect','/api/google/verify','/api/google/calendar','/api/google/records','/api/google/record','/api/google/import','/api/actions','/api/actions/propose','/api/actions/execute','/api/reminders','/api/reminders/cancel','/api/push/config','/api/push/subscribe','/api/push/disable','/api/push/test','/api/feedback','/api/feedback/config','/api/feedback/submit','/api/feedback/report','/api/feedback/image','/api/feedback/preview','/api/feedback/publish','/api/feedback/reject','/api/diagnostics']);
+const methods=new Set(['GET','POST','HEAD','OPTIONS']);
+const retention=7*86400000,dailyCap=200,totalCap=1000;
+export function diagnosticMetadata(request,env,{id,status,duration,now=Date.now(),unhandled=false}){
+ const path=new URL(request.url).pathname,release=env.TELEMETRY_RELEASE;
+ return {id,created:now,route:routes.has(path)?path:'/other',method:methods.has(request.method)?request.method:'OTHER',status,duration_ms:Math.min(600000,Math.max(0,Math.round(duration))),category:unhandled?'unhandled':status===429?'quota_or_rate_limit':status===403?'access_denied':status>=500?'service_error':'request_error',release:typeof release==='string'&&/^[a-f0-9]{7,40}$/.test(release)?release:'unknown'};
+}
+export async function storeDiagnostic(env,event){
+ if(env.TELEMETRY_ENABLED!=='true')return;
+ const day=new Date(event.created);day.setUTCHours(0,0,0,0);
+ await env.DB.batch([
+  env.DB.prepare('DELETE FROM diagnostics WHERE created<?').bind(event.created-retention),
+  env.DB.prepare('INSERT OR IGNORE INTO diagnostics(id,created,route,method,status,duration_ms,category,release) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT count(*) FROM diagnostics WHERE created>=?)<? AND (SELECT count(*) FROM diagnostics)<?').bind(event.id,event.created,event.route,event.method,event.status,event.duration_ms,event.category,event.release,day.getTime(),dailyCap,totalCap)
+ ]);
+}
+function enqueue(env,ctx,event){
+ if(env.TELEMETRY_ENABLED!=='true'||!ctx?.waitUntil)return;
+ // Telemetry must never alter an operation's result or trigger a provider retry.
+ try{ctx.waitUntil(storeDiagnostic(env,event).catch(()=>{}));}catch{}
+}
+export async function instrumentRequest(request,env,ctx,serve){
+ const id=crypto.randomUUID(),start=Date.now();let response,unhandled=false;
+ try{response=await serve();}catch{unhandled=true;response=Response.json({error:'Service unavailable. If you submitted an external action, check its result before trying again.'},{status:503});}
+ const result=new Response(response.body,response);result.headers.set('x-request-id',id);result.headers.set('cache-control','no-store');result.headers.set('x-content-type-options','nosniff');
+ if(result.status>=400&&result.headers.get('content-type')?.includes('application/json')){
+  try{const data=await result.clone().json();if(typeof data.error==='string'){data.requestId=id;data.error+=' [Reference: '+id+']';const revised=Response.json(data,{status:result.status,headers:result.headers});revised.headers.delete('content-length');response=revised;}else response=result;}catch{response=result;}
+ }else response=result;
+ // No diagnostics payloads, unauthenticated traffic, successful request sampling,
+ // request bodies, headers, exception messages or identities enter persistent logs.
+ if(result.status>=400&&result.status!==401&&new URL(request.url).pathname!=='/api/diagnostics')enqueue(env,ctx,diagnosticMetadata(request,env,{id,status:result.status,duration:Date.now()-start,unhandled}));
+ return response;
+}
+export async function instrumentScheduled(env,run){
+ const id=crypto.randomUUID(),start=Date.now();
+ try{return await run();}catch{
+  try{await storeDiagnostic(env,{id,created:Date.now(),route:'job/reminders-and-push',method:'SCHEDULED',status:503,duration_ms:Math.min(600000,Math.max(0,Date.now()-start)),category:'scheduled_error',release:typeof env.TELEMETRY_RELEASE==='string'&&/^[a-f0-9]{7,40}$/.test(env.TELEMETRY_RELEASE)?env.TELEMETRY_RELEASE:'unknown'});}catch{}
+  throw Error('Scheduled Hub job failed. Reference: '+id);
+ }
+}
+export async function diagnosticsAPI(request,env,user){
+ const known=member(user?.email);
+ if(!known||known.id!==user.id||known.role!=='owner'||user.role!=='owner')return Response.json({error:'Owner diagnostics only'},{status:403});
+ if(env.TELEMETRY_ENABLED!=='true')return Response.json({error:'Diagnostic collection is disabled'},{status:503});
+ if(request.method!=='GET')return Response.json({error:'Read-only diagnostics endpoint'},{status:405});
+ const id=new URL(request.url).searchParams.get('id');if(!uuid.test(id))return Response.json({error:'Enter an exact request reference'},{status:400});
+ try{
+  const row=await env.DB.prepare('SELECT id,created,route,method,status,duration_ms,category,release FROM diagnostics WHERE id=? AND created>=?').bind(id,Date.now()-retention).first();
+  return row?Response.json(row,{headers:{'cache-control':'no-store'}}):Response.json({error:'No retained diagnostic for this reference. Collection may have been disabled or capped.'},{status:404});
+ }catch{return Response.json({error:'Diagnostics unavailable'},{status:503});}
+}

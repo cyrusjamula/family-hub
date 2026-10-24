@@ -1,3 +1,4 @@
+import {instrumentRequest,instrumentScheduled,diagnosticsAPI} from './telemetry.js';
 import {pushAPI,publishNotices} from './push.js';
 import {privateAI} from './private-ai.js';
 import {reserveAI} from './quota.js';
@@ -31,6 +32,7 @@ export async function auditIdentity(request,env,user){
 }
 export async function api(request,env,user){
  const url=new URL(request.url), path=url.pathname;
+ if(path==='/api/diagnostics')return diagnosticsAPI(request,env,user);
  if(path.startsWith('/api/push/'))return pushAPI(request,env,user);
  if(path==='/api/private-ai')return privateAI(request,env,user);
  if(path.startsWith('/api/reminders'))return reminderAPI(request,env,user);
@@ -76,11 +78,12 @@ export async function api(request,env,user){
   await env.DB.prepare('INSERT INTO messages(id,room,author,content) VALUES(?,?,?,?)').bind(crypto.randomUUID(),room,'Coordinator',result.response).run();return json({ok:true});
  }catch{return json({error:'AI unavailable or free quota reached. Your message was saved; no paid fallback was used.'},503);}
 }
-export default {async scheduled(_event,env,ctx){ctx.waitUntil((async()=>{await deliverDue(env);await publishNotices(env);})());},async fetch(request,env){
+export async function serveRequest(request,env){
  let user;try{user=await authenticate(request,env);}catch{return json({error:'Private app: verified family sign-in required.'},401);}
  try{
  await auditIdentity(request,env,user);
  const response=new URL(request.url).pathname.startsWith('/api/')?await api(request,env,user):(env.ASSETS?await env.ASSETS.fetch(request):asset(request));
  const secured=new Response(response.body,response);secured.headers.set('cache-control','no-store');secured.headers.set('x-content-type-options','nosniff');secured.headers.set('referrer-policy','no-referrer');secured.headers.set('content-security-policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");return secured;
  }catch{return json({error:'Service unavailable. If you submitted an external action, its result may be uncertain; check Google before creating another action.'},503);}
-}};
+}
+export default {async scheduled(_event,env,ctx){ctx.waitUntil(instrumentScheduled(env,async()=>{await deliverDue(env);await publishNotices(env);}));},async fetch(request,env,ctx){return instrumentRequest(request,env,ctx,()=>serveRequest(request,env));}};
