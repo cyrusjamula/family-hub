@@ -11,7 +11,7 @@ npm ci
 npm run ci
 ```
 
-Node24. Direct dependencies pinned and lockfile committed. CI checks syntax, critical deployment invariants,37security/behavior tests, regenerates embedded static assets and runs a Wrangler bundle dry-run. `npm run deploy` deploys using `--keep-vars`. Production branch is `main`; preview builds/URLs stay disabled. Database migrations are reviewed separately with `npm run migrate:production`; migrations0001–0005 already exist in production. Never deploy to a newly provisioned database accidentally.
+Node24. Direct dependencies pinned and lockfile committed. CI checks syntax, critical deployment invariants,38security/behavior tests, regenerates embedded static assets and runs a Wrangler bundle dry-run. `npm run deploy` deploys using `--keep-vars`. Production branch is `main`; preview builds/URLs stay disabled. Database migrations are reviewed separately with `npm run migrate:production`; migrations0001–0005 already exist in production. Never deploy to a newly provisioned database accidentally.
 
 ## Application
 
