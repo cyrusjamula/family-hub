@@ -54,3 +54,9 @@ test('review PRs keep file and issue locks but leave coding slots available for 
  const p=planFactory(snapshot([issue(1,'public/task-1.js'),issue(2),issue(3)],active),now);assert.deepEqual(p.selected.map(i=>i.issue),[2,3]);assert.match(p.blocked[0].reason,/already active/);
  assert.throws(()=>planFactory(snapshot([issue(2)],[{...active[0],relatedIssues:['untrusted']}]),now));
 });
+test('Markdown closing hashes and permitted indentation cannot disguise duplicate scope sections',()=>{
+ for(const heading of ['## Files ##',' ## Files','  ## Files ###  ','   ## FILES\t####']){
+  const i=issue(1);i.body+='\n'+heading+'\nsrc/policy.js';i.comments[0].body='/factory approve '+issueScopeDigest(i);assert.equal(planFactory(snapshot([i]),now).selected.length,0,heading);
+ }
+ const valid=issue(1);valid.body=valid.body.replace(/^## (.+)$/gm,'   ## $1 ##');valid.comments[0].body='/factory approve '+issueScopeDigest(valid);assert.equal(planFactory(snapshot([valid]),now).selected.length,1);
+});

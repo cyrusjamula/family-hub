@@ -8,8 +8,8 @@ export function issueScopeDigest(issue){
  return createHash('sha256').update(JSON.stringify({repository:factoryPolicy.repository,number:issue.number,title:issue.title,body:issue.body})).digest('hex');
 }
 function sections(body){
- const normalized=body.replace(/\r\n?/g,'\n'),headings=[...normalized.matchAll(/^## ([^\n]+)$/gm)],result=new Map();
- for(let i=0;i<headings.length;i++){const name=headings[i][1].trim().toLowerCase();if(result.has(name))throw Error('ambiguous duplicate readiness section');result.set(name,normalized.slice(headings[i].index+headings[i][0].length,headings[i+1]?.index??normalized.length).trim());}
+ const normalized=body.replace(/\r\n?/g,'\n'),headings=[...normalized.matchAll(/^ {0,3}##[ \t]+([^\n]*)$/gm)],result=new Map();
+ for(let i=0;i<headings.length;i++){const name=headings[i][1].replace(/[ \t]+#+[ \t]*$/,'').trim().toLowerCase();if(result.has(name))throw Error('ambiguous duplicate readiness section');result.set(name,normalized.slice(headings[i].index+headings[i][0].length,headings[i+1]?.index??normalized.length).trim());}
  return result;
 }
 function canonicalScope(path){
