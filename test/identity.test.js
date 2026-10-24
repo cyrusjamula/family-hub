@@ -133,7 +133,7 @@ test('identity audit records only verified attempt metadata, never content or OA
 test('real JWT verification resolves aliases and denies forged, revoked, unknown and wrong-audience identities',async()=>{
  const {privateKey,publicKey}=await generateKeyPair('RS256'),jwk=await exportJWK(publicKey);jwk.kid='synthetic-key';
  const issuer='https://identity-tests.cloudflareaccess.com',audience='synthetic-audience';
- const {sql,env}=fixture();Object.assign(env,{ACCESS_TEAM_DOMAIN:issuer,ACCESS_AUD:audience,MEMBER_ALIASES:aliases});
+ const {sql,env}=fixture();Object.assign(env,{ACCESS_TEAM_DOMAIN:issuer,ACCESS_AUD:audience,MEMBER_ALIASES:aliases,FEEDBACK_ENABLED:'true'});
  const sign=(email,aud=audience,expiration='5m')=>new SignJWT({email}).setProtectedHeader({alg:'RS256',kid:jwk.kid}).setIssuer(issuer).setAudience(aud).setIssuedAt().setExpirationTime(expiration).sign(privateKey);
  const original=globalThis.fetch;
  try{
@@ -141,6 +141,7 @@ test('real JWT verification resolves aliases and denies forged, revoked, unknown
   const token=await sign(owner.signInEmail);
   const signedRequest=(path,jwt=token)=>new Request('https://hub.test/api/'+path,{headers:{'Cf-Access-Jwt-Assertion':jwt}});
   assert.deepEqual(await authenticate(signedRequest('me'),env),owner);
+  assert.equal((await (await worker.fetch(signedRequest('feedback/config'),env)).json()).enabled,true);
   assert.equal((await (await worker.fetch(signedRequest('me'),env)).json()).id,'cyrus');
   for(const [email,aud,expiration] of [['unknown@example.test',audience,'5m'],[owner.signInEmail,'wrong','5m'],[owner.signInEmail,audience,1]])assert.equal((await worker.fetch(signedRequest('me',await sign(email,aud,expiration)),env)).status,401);
   assert.equal((await worker.fetch(signedRequest('me',token.slice(0,-8)+'tampered'),env)).status,401);
@@ -150,7 +151,7 @@ test('real JWT verification resolves aliases and denies forged, revoked, unknown
   for(const path of ['messages?room=parents','briefs?room=parents','approvals?room=parents','notifications?room=parents','google/status','google/records','actions','reminders','private-ai'])assert.equal((await worker.fetch(signedRequest(path,childToken),env)).status,403,path);
   for(const email of ['child.alias@example.test','adult.alias@example.test']){
    const jwt=await sign(email);
-   for(const path of ['actions/propose','actions/execute','reminders','reminders/cancel','private-ai','google/connect','google/import','google/disconnect','approve']){
+   for(const path of ['actions/propose','actions/execute','reminders','reminders/cancel','private-ai','google/connect','google/import','google/disconnect','approve','feedback/preview','feedback/publish','feedback/reject']){
     const post=new Request('https://hub.test/api/'+path,{method:'POST',headers:{'Cf-Access-Jwt-Assertion':jwt,origin:'https://hub.test','content-type':'application/json'},body:JSON.stringify({state:'approved',content:'Synthetic',confirmExactAction:true})});
     assert.equal((await worker.fetch(post,env)).status,403,email+': '+path);
    }

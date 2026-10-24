@@ -1,3 +1,4 @@
+import {feedbackAPI} from './feedback.js';
 import {instrumentRequest,instrumentScheduled,diagnosticsAPI} from './telemetry.js';
 import {pushAPI,publishNotices} from './push.js';
 import {privateAI} from './private-ai.js';
@@ -21,7 +22,7 @@ export async function authenticate(request,env){
  if(!user)throw new Error('This account is not a family member');
  return user;
 }
-const auditedRoutes=new Set(['/api/chat','/api/propose','/api/approve','/api/actions/propose','/api/actions/execute','/api/reminders','/api/reminders/cancel','/api/push/subscribe','/api/push/disable','/api/push/test','/api/private-ai','/api/google/connect','/api/google/disconnect','/api/google/import','/api/google/callback']);
+const auditedRoutes=new Set(['/api/feedback/submit','/api/feedback/preview','/api/feedback/publish','/api/feedback/reject','/api/chat','/api/propose','/api/approve','/api/actions/propose','/api/actions/execute','/api/reminders','/api/reminders/cancel','/api/push/subscribe','/api/push/disable','/api/push/test','/api/private-ai','/api/google/connect','/api/google/disconnect','/api/google/import','/api/google/callback']);
 export async function auditIdentity(request,env,user){
  const url=new URL(request.url);
  if(!auditedRoutes.has(url.pathname)||!(request.method==='POST'||url.pathname==='/api/google/callback'&&request.method==='GET'))return;
@@ -32,6 +33,7 @@ export async function auditIdentity(request,env,user){
 }
 export async function api(request,env,user){
  const url=new URL(request.url), path=url.pathname;
+ if(path==='/api/feedback'||path.startsWith('/api/feedback/'))return feedbackAPI(request,env,user);
  if(path==='/api/diagnostics')return diagnosticsAPI(request,env,user);
  if(path.startsWith('/api/push/'))return pushAPI(request,env,user);
  if(path==='/api/private-ai')return privateAI(request,env,user);
