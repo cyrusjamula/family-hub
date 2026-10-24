@@ -13,11 +13,27 @@ export function normalizeEmail(value){
 }
 // Runtime-only explicit aliases. Never infer relationships, strip plus tags/dots,
 // accept role claims, or store additional personal addresses in public source.
+function aliasEntries(raw){
+ if(raw===undefined)return [];
+ if(typeof raw!=='string'||raw.length>16384)throw Error('Invalid member aliases');
+ // Parse the flat string-to-string format without discarding duplicate JSON keys.
+ let offset=0;const pairs=[],stringToken=/"(?:[^"\\]|\\.)*"/y;
+ const whitespace=()=>{while(/[ \t\r\n]/.test(raw[offset]||'!'))offset++;};
+ const consume=char=>{whitespace();if(raw[offset++]!==char)throw Error('Invalid member aliases');};
+ const readString=()=>{whitespace();stringToken.lastIndex=offset;const token=stringToken.exec(raw);if(!token)throw Error('Invalid member aliases');offset=stringToken.lastIndex;return JSON.parse(token[0]);};
+ consume('{');whitespace();
+ if(raw[offset]!=='}')for(;;){
+  const address=readString();consume(':');const id=readString();pairs.push([address,id]);
+  if(pairs.length>32)throw Error('Invalid member aliases');
+  whitespace();if(raw[offset]!==',')break;offset++;
+ }
+ consume('}');whitespace();if(offset!==raw.length)throw Error('Invalid member aliases');
+ return pairs;
+}
 export function directory(raw){
- const aliases=raw===undefined?{}:JSON.parse(raw);
- if(!aliases||typeof aliases!=='object'||Array.isArray(aliases)||Object.keys(aliases).length>32)throw Error('Invalid member aliases');
+ const aliases=aliasEntries(raw);
  const entries=new Map(Object.entries(members));
- for(const [address,id] of Object.entries(aliases)){
+ for(const [address,id] of aliases){
   const email=normalizeEmail(address);
   if(!email||typeof id!=='string'||!Object.hasOwn(people,id)||entries.has(email))throw Error('Invalid or conflicting member alias');
   entries.set(email,people[id]);

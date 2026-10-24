@@ -44,6 +44,18 @@ test('invalid, ambiguous, conflicting and unknown alias configurations fail clos
  assert.equal(removed.resolve(owner.signInEmail),undefined);
  assert.equal(removed.resolve(people.cyrus.email).id,'cyrus');
 });
+test('raw duplicate JSON aliases cannot silently change identity, including escaped spellings',()=>{
+ for(const raw of [
+  '{"child.alias@example.test":"iyanah","child.alias@example.test":"cyrus"}',
+  '{"child.alias@example.test":"iyanah","child.alias@example.test":"iyanah"}',
+  String.raw`{"child.alias@example.test":"iyanah","child.alias@\u0065xample.test":"cyrus"}`,
+  '{"CHILD.alias@example.test":"iyanah","child.alias@example.test":"cyrus"}',
+  '{"child.alias@example.test":{},"child.alias@example.test":"cyrus"}',
+  '{"child.alias@example.test":"cyrus",}',
+  '{"child.alias@example.test":"cyrus"} null'
+ ])assert.throws(()=>directory(raw));
+ assert.equal(directory(' { "owner.alias@example.test" : "cyrus" } \n').resolve('owner.alias@example.test').id,'cyrus');
+});
 test('aliases preserve each person\'s role and cannot claim another person\'s privileges',async()=>{
  const child=resolve('child.alias@example.test'),adult=resolve('adult.alias@example.test');
  for(const user of [child,adult]){
@@ -144,8 +156,12 @@ test('real JWT verification resolves aliases and denies forged, revoked, unknown
    }
   }
   // Audit failure must prevent a mutation before any AI or provider call.
-  let modelCalls=0;const failedEnv={...env,AI_ENABLED:'true',AI:{run(){modelCalls++;}},DB:{prepare(){throw Error('audit unavailable');}}};
+  let modelCalls=0;const ai={run(){modelCalls++;return {response:'Synthetic response'};}};
+  const failedEnv={...env,AI_ENABLED:'true',AI:ai,DB:{...env.DB,prepare(query){if(query.startsWith('INSERT INTO identity_audit'))throw Error('audit unavailable');return env.DB.prepare(query);}}};
   const post=new Request('https://hub.test/api/chat',{method:'POST',headers:{'Cf-Access-Jwt-Assertion':token,origin:'https://hub.test','content-type':'application/json'},body:JSON.stringify({content:'Synthetic'})});
+  const retry=post.clone();
   assert.equal((await worker.fetch(post,failedEnv)).status,503);assert.equal(modelCalls,0);
+  assert.equal(sql.prepare("SELECT count(*) AS n FROM messages WHERE content='Synthetic'").get().n,0);
+  assert.equal((await worker.fetch(retry,{...env,AI_ENABLED:'true',AI:ai})).status,200);assert.equal(modelCalls,1);
  }finally{globalThis.fetch=original;sql.close();}
 });

@@ -9,12 +9,12 @@ The intended pipeline is a public GitHub source repository → Cloudflare Worker
 | Production branch | `main` |
 | Root directory | `/` |
 | Install | `npm ci` (automatic package-lock detection) |
-| Node | `24` via build environment `NODE_VERSION` |
+| Node | `26.12.1` via `.nvmrc` and matching build environment `NODE_VERSION` |
 | Build command | `npm run ci` |
 | Deploy command | `npm run deploy` |
 | Non-production/preview builds | Disabled |
 
-`ci` checks JavaScript syntax, security-critical deployment settings, the full test suite, generated asset consistency through regeneration, and a Wrangler bundle dry-run. `deploy` runs `ci` itself and invokes the local pinned Wrangler with `--keep-vars` only after validation succeeds. A failure, signal, or spawn error prevents that deployment invocation. The native build command also runs validation; this intentional repetition keeps the deployment command safe when dashboard settings drift. Do not enable a second deployment workflow for the same branch.
+`ci` checks JavaScript syntax, security-critical deployment settings, the full test suite, generated asset consistency through regeneration, and a Wrangler bundle dry-run. `deploy` runs `ci` itself and invokes the local pinned Wrangler with `--keep-vars` only after validation succeeds. A failure, signal, or spawn error prevents that deployment invocation. CLI flags are forwarded only to Wrangler; `npm run deploy -- --dry-run` remains a dry run. The native build command also runs validation; this intentional repetition keeps the deployment command safe when dashboard settings drift. Do not enable a second deployment workflow for the same branch.
 
 The `Validate Family Hub` GitHub Actions workflow runs the same checks on pull requests and `main`. It uses standard public-repository runners, read-only repository access, pinned action revisions, and no deployment or runtime secrets. It performs no deployment, provider writes, or AI calls. It does not replace the native Cloudflare deployment pipeline. Branch protection must separately require its `validate` job; workflow presence alone does not enforce merge rules.
 
@@ -40,3 +40,7 @@ After first deployment verify: build log passes all tests; deployed commit match
 
 The source repository is public by owner choice; the live hub remains protected. The reviewed baseline is merged in PR #2. Cloudflare GitHub integration was previously connected for this repository, but builds were last observed disabled. On this follow-up, the dashboard stopped at a site-served bot security verification page, so current build configuration and the active source commit could not be verified. First verified native build, deployment SHA, failing-build demonstration in the native pipeline, and post-deployment live smoke tests remain pending in issue #3. Local automated tests of the deployment gate are separate from that live evidence.
 
+
+## Node security baseline
+
+Build tooling and CI are pinned to Node 26.12.1, the October 21, 2026 security release (https://nodejs.org/en/blog/release/v26.12.1). The same advisory also patched Node 24 at 24.22.1; changing majors alone does not guarantee a security fix. Cloudflare supports a specific version via `NODE_VERSION` or `.nvmrc` (https://developers.cloudflare.com/workers/ci-cd/builds/build-image/). Set any dashboard override to exactly 26.12.1. CI rejects drift between the pin, workflow, lockfile, engine floor, and actual running Node version. The production Worker runs on Cloudflare's runtime; this Node pin controls build/test/deploy tooling. Review and test later security updates before moving the exact pin.

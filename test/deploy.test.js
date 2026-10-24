@@ -20,3 +20,9 @@ test('validation spawn errors and deployment failures propagate',()=>{
  assert.equal(runDeployment(()=>({status:++calls===1?0:7})),7);
  assert.equal(calls,2);
 });
+test('dry-run and environment arguments reach only Wrangler without changing validation',()=>{
+ for(const args of [['--dry-run'],['--env','staging'],['--dry-run','--outdir','build-synthetic']]){
+  const calls=[];assert.equal(runDeployment((command,argv)=>{calls.push([command,argv]);return {status:0};},args),0);
+  assert.deepEqual(calls,[['npm',['run','ci']],['npm',['exec','--','wrangler','deploy','--keep-vars',...args]]]);
+ }
+});

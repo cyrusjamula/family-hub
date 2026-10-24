@@ -1,6 +1,10 @@
 import {spawnSync} from 'node:child_process';
 import {readdir,readFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
+import {validateRuntime} from './runtime.mjs';
+const pkg=JSON.parse(await readFile('package.json','utf8'));
+const lock=JSON.parse(await readFile('package-lock.json','utf8'));
+validateRuntime({version:process.versions.node,pin:(await readFile('.nvmrc','utf8')).trim(),engines:pkg.engines.node,lockedEngines:lock.packages[''].engines.node,workflow:await readFile('.github/workflows/validate.yml','utf8')});
 const run=(command,args)=>{const r=spawnSync(command,args,{stdio:'inherit',shell:false});if(r.error)throw r.error;if(r.status!==0)process.exit(r.status||1);};
 const config=JSON.parse(await readFile('wrangler.jsonc','utf8'));
 assert.equal(config.name,'jamula-family-coordinator');
