@@ -43,7 +43,7 @@ The native GitHub-to-Cloudflare pipeline is enabled. It builds `main` with Node 
 | Check | Observed evidence |
 | --- | --- |
 | Successful reviewed source | Main `3bd4b20a5a2be3a031a7604badef5ab5710a28d0`; native build `062652a1-8524-4fc4-9f08-34308d8e77e6`; production version `ce5c796b` at 100% in rollout history |
-| Full regression/build checks | [GitHub validation](https://github.com/cyrusjamula/family-hub/actions/runs/40070037542) and [native build/deploy run](https://github.com/cyrusjamula/family-hub/actions/runs/40070037219) passed on that source |
+| Full regression/build checks | [GitHub validation](https://github.com/cyrusjamula/family-hub/actions/runs/40070037542) and [Cloudflare Workers Builds status](https://github.com/cyrusjamula/family-hub/runs/120801437832) passed on that source |
 | Native failure stops deployment | Build `01e4f712-8d7b-4405-bf9a-af5a3ef2d35e` on `c1e9eeac04d895e28fe35836499b060bf37a5813` ran with Node 24.22.1, failed the runtime-version regression assertion in `npm run ci`, and never entered deployment or produced a Worker version |
 | Authenticated owner smoke | Expected owner role; Chat, Plan & approvals, Settings and Advanced loaded; existing Google connection remained connected; both Drive roots passed metadata-only checks; existing Family calendar read succeeded |
 | Anonymous protection | Before owner sign-in, the production URL presented the Access login screen rather than app content; the Domains screen confirms an Access policy and disabled preview URLs |
