@@ -4,14 +4,14 @@ Private family coordinator hosted on Cloudflare Workers. Live hub: https://bit.l
 
 ## Source and delivery
 
-Repository: https://github.com/cyrusjamula/family-hub (Private verified). Cloudflare Git integration is connected to the existing `jamula-family-coordinator` Worker. Initial automated build/deployment is being configured; do not claim it passed until its build log and live app are checked. See [CI/CD configuration](docs/CICD.md).
+Repository: https://github.com/cyrusjamula/family-hub (public source, as requested). The deployed hub remains restricted. Cloudflare Git integration is connected to the existing `jamula-family-coordinator` Worker. Initial automated build/deployment is being configured; do not claim it passed until its build log and live app are checked. See [CI/CD configuration](docs/CICD.md).
 
 ```sh
 npm ci
 npm run ci
 ```
 
-Node24. Direct dependencies pinned and lockfile committed. CI checks syntax, critical deployment invariants,27security/behavior tests, regenerates embedded static assets and runs a Wrangler bundle dry-run. `npm run deploy` deploys using `--keep-vars`. Production branch is `main`; preview builds/URLs stay disabled. Database migrations are reviewed separately with `npm run migrate:production`; migrations0001–0005 already exist in production. Never deploy to a newly provisioned database accidentally.
+Node24. Direct dependencies pinned and lockfile committed. CI checks syntax, critical deployment invariants,37security/behavior tests, regenerates embedded static assets and runs a Wrangler bundle dry-run. `npm run deploy` deploys using `--keep-vars`. Production branch is `main`; preview builds/URLs stay disabled. Database migrations are reviewed separately with `npm run migrate:production`; migrations0001–0005 already exist in production. Never deploy to a newly provisioned database accidentally.
 
 ## Application
 
@@ -45,3 +45,4 @@ Reminders deliver once in their confirmed room. A15minute cron is saved and on-o
 Runtime secrets remain only in Cloudflare: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_ENABLED, GOOGLE_VAULT_KEY, PUSH_VAPID_JWK. OAuth tokens/imported records live only in encrypted D1. No actual credentials, passport data, payment records, database dumps or `.wrangler` state belong in this repository. Do not copy runtime secrets into build variables or CI logs. Deployment authentication is native Cloudflare build configuration, separate from Google credentials.
 
 Workers Free only; no subscription upgrades or paid add-ons authorized. Native Cloudflare Builds avoids GitHub Actions runner usage for this pipeline. Platform quotas apply. Keep previous healthy deployment available for rollback; schema rollback is separate. See docs/CICD.md for operations.
+

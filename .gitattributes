@@ -1,0 +1,5 @@
+src/*.js linguist-generated=false
+public/*.js linguist-generated=false
+public/style.css linguist-generated=false
+test/*.js linguist-generated=false
+src/assets.js linguist-generated=true

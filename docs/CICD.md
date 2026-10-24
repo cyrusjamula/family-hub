@@ -1,6 +1,6 @@
 # Source and deployments
 
-The intended pipeline is a private GitHub repository → Cloudflare Workers Builds → validation → deployment of the existing Worker. Cloudflare Workers Free build allowance is used; no paid plan or overage is authorized. No GitHub Actions runner is needed for this pipeline.
+The intended pipeline is a public GitHub source repository → Cloudflare Workers Builds → validation → deployment of the existing Worker. Cloudflare Workers Free build allowance is used; no paid plan or overage is authorized. No GitHub Actions runner is needed for this pipeline.
 
 ## Build configuration
 
@@ -36,4 +36,5 @@ After first deployment verify: build log passes all tests; deployed commit match
 
 ## Setup status
 
-Repository Private verified and Cloudflare GitHub integration connected for this repository. Pipeline source is being uploaded; builds remain disabled until that succeeds. First native build and live smoke verification remain pending.
+The source repository is public by owner choice; the live hub remains protected. Cloudflare GitHub integration is connected for this repository. Pipeline source is being uploaded; builds remain disabled until that succeeds. First native build and live smoke verification remain pending.
+

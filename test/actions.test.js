@@ -10,3 +10,13 @@ async function fixture(){const payload=JSON.stringify({to:['cjamula@gmail.com'],
 test('missing scope, missing approval, tampering and expiry never call provider',async()=>{const a=await fixture();let calls=0;const exec=async()=>{calls++;};const env={...googleConfig,DB:database(a,'')};assert.equal((await actionAPI(request({id:a.id,digest:a.digest,confirmExactAction:true}),env,owner,exec)).status,403);assert.equal((await actionAPI(request({id:a.id,digest:a.digest}),env,owner,exec)).status,400);assert.equal((await actionAPI(request({id:a.id,digest:'wrong',confirmExactAction:true}),env,owner,exec)).status,409);a.expires=0;assert.equal((await actionAPI(request({id:a.id,digest:a.digest,confirmExactAction:true}),env,owner,exec)).status,409);assert.equal(calls,0);});
 test('disabled Google actions are rejected before database claims or provider access',async()=>{let calls=0,queries=0;const env={...googleConfig,GOOGLE_ENABLED:'false',DB:{prepare(){queries++;throw Error('database must not be accessed');}}};const response=await actionAPI(request({id:'test',digest:'test',confirmExactAction:true}),env,owner,async()=>{calls++;});assert.equal(response.status,503);assert.equal(calls,0);assert.equal(queries,0);});
 test('approved action executes once; uncertain response never retries',async()=>{for(const fail of [false,true]){const a=await fixture();let calls=0;const env={...googleConfig,DB:database(a,'https://www.googleapis.com/auth/gmail.send')};const exec=async()=>{calls++;if(fail)throw Error('network interruption');return 'synthetic-id';};const body={id:a.id,digest:a.digest,confirmExactAction:true};assert.equal((await actionAPI(request(body),env,owner,exec)).status,fail?502:200);assert.equal((await actionAPI(request(body),env,owner,exec)).status,409);assert.equal(calls,1);}});
+test('provider success followed by complete bookkeeping failure warns without retrying',async()=>{
+ const a=await fixture(),db=database(a,'https://www.googleapis.com/auth/gmail.send');let sends=0;
+ const prepare=db.prepare.bind(db);db.prepare=sql=>sql.includes("state='uncertain'")?{bind:()=>({run:async()=>{throw Error('database offline');}})}:prepare(sql);
+ db.batch=async()=>{throw Error('completion write failed');};
+ const env={...googleConfig,DB:db},body={id:a.id,digest:a.digest,confirmExactAction:true};
+ const executor=async()=>{sends++;return 'accepted-provider-id';};
+ const result=await actionAPI(request(body),env,owner,executor);assert.equal(result.status,502);assert.equal((await result.json()).state,'uncertain');
+ assert.equal((await actionAPI(request(body),env,owner,executor)).status,409);assert.equal(sends,1);
+});
+

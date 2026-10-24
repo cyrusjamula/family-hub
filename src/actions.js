@@ -53,5 +53,6 @@ export async function actionAPI(request,env,user,executor=executeGoogleAction){
  const claimed=await env.DB.prepare("UPDATE actions SET state='executing' WHERE id=? AND owner=? AND state='pending' AND expires>? RETURNING id").bind(a.id,user.email,Date.now()).first();if(!claimed)return json({error:'Action already claimed'},409);
  try{
   const providerId=await executor(env,user,a);await env.DB.batch([env.DB.prepare("UPDATE actions SET state='executed',provider_id=? WHERE id=?").bind(providerId,a.id),env.DB.prepare('INSERT INTO notifications(id,room,content) VALUES(?,?,?)').bind(crypto.randomUUID(),'parents','Cyrus executed '+a.kind+' action '+a.id+'.')]);return json({state:'executed',providerId});
- }catch{await env.DB.prepare("UPDATE actions SET state='uncertain' WHERE id=?").bind(a.id).run();return json({error:'Provider result uncertain or rejected. Do not retry automatically; check Google first.',state:'uncertain'},502);}
+ }catch{try{await env.DB.prepare("UPDATE actions SET state='uncertain' WHERE id=?").bind(a.id).run();}catch{/* The provider may have succeeded even when all completion bookkeeping is unavailable. */}return json({error:'Provider result uncertain or rejected. Do not retry automatically; check Google first.',state:'uncertain'},502);}
 }
+
