@@ -42,8 +42,8 @@ The native GitHub-to-Cloudflare pipeline is enabled. It builds `main` with Node 
 
 | Check | Observed evidence |
 | --- | --- |
-| Successful reviewed source | Main `eacc8777035e56e23aa944cb8de31b7995dd9f4b`; native build `0ffa7d02-f2f1-49fd-97a4-2b5a81d86c5e`; reviewed production version `c0f77f2e` (see current-state caveat below) |
-| Full regression/build checks | [GitHub validation](https://github.com/cyrusjamula/family-hub/actions/runs/40067300406) and [native build/deploy run](https://github.com/cyrusjamula/family-hub/actions/runs/40067300169) passed on that source |
+| Successful reviewed source | Main `3bd4b20a5a2be3a031a7604badef5ab5710a28d0`; native build `062652a1-8524-4fc4-9f08-34308d8e77e6`; production version `ce5c796b` at 100% in rollout history |
+| Full regression/build checks | [GitHub validation](https://github.com/cyrusjamula/family-hub/actions/runs/40070037542) and [native build/deploy run](https://github.com/cyrusjamula/family-hub/actions/runs/40070037219) passed on that source |
 | Native failure stops deployment | Build `01e4f712-8d7b-4405-bf9a-af5a3ef2d35e` on `c1e9eeac04d895e28fe35836499b060bf37a5813` ran with Node 24.22.1, failed the runtime-version regression assertion in `npm run ci`, and never entered deployment or produced a Worker version |
 | Authenticated owner smoke | Expected owner role; Chat, Plan & approvals, Settings and Advanced loaded; existing Google connection remained connected; both Drive roots passed metadata-only checks; existing Family calendar read succeeded |
 | Anonymous protection | Before owner sign-in, the production URL presented the Access login screen rather than app content; the Domains screen confirms an Access policy and disabled preview URLs |
@@ -52,8 +52,6 @@ The native GitHub-to-Cloudflare pipeline is enabled. It builds `main` with Node 
 The native failure above is an actual CI runtime-assertion failure, not a deliberately injected failing application test on production. `test/deploy-integration.test.js` separately exercises the real deployment entry point and real npm/test subprocesses with passing and failing synthetic suites. A local executable replaces Wrangler; the child receives no provider credentials and npm is offline. Failure must exit before the local Wrangler boundary; success must reach it exactly once with `--keep-vars`. These tests complement the existing exit/signal/spawn-error and argument-forwarding coverage.
 
 No deliberate broken source, production failure, rollback, schema migration, email/calendar mutation or AI request was introduced to collect this evidence. Owner smoke tests do not complete the other members' role/alias tests (#4/#5), device tests (#7), private-record consent tests (#8), unattended jobs (#9), telemetry rollout (#14) or feedback rollout.
-
-During final verification, a separate rebuild of older commit `c1e9eea` and a manual Wrangler deployment appeared. The rollout history subsequently listed `ce5c796b` at 100%. That manual version has no GitHub source link in the deployment list, so its source SHA is unverified. This change did not request those deployments. Issue #3 must remain open until the active deployment is tied to a reviewed commit and smoke checks are repeated against it. Do not assume that the historical successful build proves the current manual upload's provenance.
 
 ## Rollback and migration runbook
 
