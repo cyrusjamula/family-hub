@@ -45,8 +45,9 @@ export async function collectFactorySnapshot({token,send=fetch}={}){
   if(!Number.isSafeInteger(detail.changed_files)||detail.changed_files<1||detail.changed_files>1000||! /^[a-f0-9]{40}$/.test(detail.head?.sha||''))throw Error('Pull request conflict scope is incomplete');
   const files=await pages('/pulls/'+pr.number+'/files',{},10);
   if(files.length!==detail.changed_files)throw Error('Truncated pull request file scope');
-  const current=(await get('/pulls/'+pr.number)).data;if(current.head?.sha!==detail.head.sha||current.changed_files!==detail.changed_files||current.state!=='open')throw Error('Pull request changed while collecting');
-  const relatedIssues=[...(current.body||'').matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#([1-9]\d*)/gi)].map(m=>Number(m[1]));
+  const current=(await get('/pulls/'+pr.number)).data;if(current.head?.sha!==detail.head.sha||current.base?.sha!==detail.base?.sha||current.base?.ref!==detail.base?.ref||current.changed_files!==detail.changed_files||current.state!=='open')throw Error('Pull request changed while collecting');
+  const closingReferences=(current.body||'').matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\s+(?:([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)?#([1-9]\d*)\b|https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/issues\/([1-9]\d*)\b)/gi);
+  const relatedIssues=[...closingReferences].filter(m=>!(m[1]||m[3])||(m[1]||m[3]).toLowerCase()===factoryPolicy.repository.toLowerCase()).map(m=>Number(m[2]||m[4]));
   active.push({issue:pr.number,relatedIssues,files:[...new Set(files.flatMap(file=>[file.filename,...(file.previous_filename?[file.previous_filename]:[])]))],state:current.draft===true&&current.user?.type==='Bot'?'running':'review'});
  }
  return {repository:factoryPolicy.repository,issues:[...issues.values()],active};
