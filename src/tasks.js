@@ -22,8 +22,10 @@ export async function taskAPI(request,env,user){
   if(url.pathname==='/api/tasks/options')return json(taskOptions(user,room));
   if(url.pathname!=='/api/tasks')return json({error:'Not found'},404);
   const state=url.searchParams.get('state')||'active';if(!['active','all'].includes(state))return json({error:'Invalid task filter'},400);
-  const rows=await env.DB.prepare("SELECT * FROM tasks WHERE room=?"+(state==='active'?" AND status IN ('todo','working')":'')+' ORDER BY created DESC,id DESC LIMIT 101').bind(room).all();
-  return json({tasks:rows.results.slice(0,100).map(r=>visible(r,user)),more:rows.results.length>100});
+  const cursor=url.searchParams.get('cursor'),args=[room];let where='room=?'+(state==='active'?" AND status IN ('todo','working')":'');
+  if(cursor){const [created,id,...extra]=cursor.split('|');if(extra.length||!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(created)||!uuid.test(id))return json({error:'Invalid task cursor'},400);where+=' AND (created<? OR (created=? AND id<?))';args.push(created,created,id);}
+  const rows=await env.DB.prepare('SELECT * FROM tasks WHERE '+where+' ORDER BY created DESC,id DESC LIMIT 31').bind(...args).all(),page=rows.results.slice(0,30),last=page.at(-1);
+  return json({tasks:page.map(r=>visible(r,user)),nextCursor:rows.results.length>30?last.created+'|'+last.id:null});
  }
  if(request.method!=='POST'||request.headers.get('origin')!==url.origin)return json({error:'Origin rejected'},403);
  if(!request.headers.get('content-type')?.startsWith('application/json'))return json({error:'JSON required'},415);

@@ -46,3 +46,11 @@ test('unknown identity, forged role, invalid room and cross-origin requests deny
  const env={DB:{prepare(){throw Error('No storage access permitted');}}};for(const user of [null,{...child,role:'owner'},{...child,email:'unknown@example.test'}])assert.equal((await taskAPI(req(''),env,user)).status,403);
  assert.equal((await taskAPI(req('?room=other'),env,owner)).status,403);assert.equal((await taskAPI(new Request('https://hub.test/api/tasks/create',{method:'POST',headers:{origin:'https://evil.test','content-type':'application/json'},body:'{}'}),env,owner)).status,403);
 });
+
+test('all retained tasks remain reachable across cursor pages, including shared timestamps and completed work',async()=>{
+ const {sql,api}=fixture();try{
+  const expected=new Set();for(let i=0;i<101;i++){const id=crypto.randomUUID();expected.add(id);sql.prepare('INSERT INTO tasks(id,room,creator_id,assignee_id,assistant,title,details,source,provenance,approval_required,approval,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(id,'family',child.id,child.id,'human','Synthetic '+i,'Fixture only','hub','Synthetic',0,'not_required',i%2?'done':'todo');}
+  let cursor=null;const seen=[];do{const page=await (await api('?room=family&state=all'+(cursor?'&cursor='+encodeURIComponent(cursor):''),undefined,child)).json();seen.push(...page.tasks.map(t=>t.id));cursor=page.nextCursor;}while(cursor);assert.equal(seen.length,101);assert.deepEqual(new Set(seen),expected);
+  assert.equal((await api('?room=family&cursor='+encodeURIComponent("bad' OR 1=1"),undefined,child)).status,400);
+ }finally{sql.close();}
+});

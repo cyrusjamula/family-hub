@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {readFile} from 'node:fs/promises';
 const source=await readFile(new URL('../public/tasks.js',import.meta.url),'utf8'),tick=()=>new Promise(r=>setImmediate(r));
-async function client(role='owner'){
+async function client(role='owner',{initialFailure=false}={}){
  const elements={},all=[],requests=[];let intercept,revision=1;
  class E{constructor(tag='div',text=''){this.tag=tag;this.children=[];this.value='';this._text=text;this.isConnected=true;this.disabled=false;this.checked=false;all.push(this);}set id(v){this._id=v;elements[v]=this;}get id(){return this._id;}set textContent(t){this._text=String(t);this.children=[];}get textContent(){return this._text+this.children.map(c=>c.textContent||'').join(' ');}append(...c){this.children.push(...c);}prepend(...c){this.children.unshift(...c);}replaceChildren(...c){this._text='';this.children=c;}setAttribute(k,v){this[k]=v;}querySelectorAll(){return all.filter(e=>['button','input','textarea','select'].includes(e.tag));}}
  const host=new E('section');host.id='view-planner';
@@ -9,7 +9,7 @@ async function client(role='owner'){
  const task={id:crypto.randomUUID(),title:'Synthetic task',details:'Fixture only',room:'family',assignee:'Synthetic member',assignee_id:owner.id,creator:'Synthetic member',creator_id:owner.id,assistantName:'Human only',approval:'not_required',status:'todo',version:revision,canUpdate:true,canApprove:false};
  const sandbox={document:{getElementById:id=>elements[id],createElement:tag=>new E(tag),addEventListener(){},dispatchEvent(){}},crypto,navigator:{clipboard:{async writeText(){}}},Event,fetch:async(path,opt={})=>{
   const req={path,body:opt.body?JSON.parse(opt.body):undefined};requests.push(req);const custom=await intercept?.(req);if(custom)return custom;
-  if(path==='/api/me')return Response.json(owner);if(path.startsWith('/api/tasks/options'))return Response.json(options);if(path.startsWith('/api/tasks/create'))return Response.json({...task,id:req.body.id}, {status:201});if(path.startsWith('/api/tasks/update')){revision++;return Response.json({...task,version:revision});}return Response.json({tasks:[],more:false});
+  if(path==='/api/me'){if(initialFailure){initialFailure=false;return Response.json({error:'temporarily unavailable'},{status:503});}return Response.json(owner);}if(path.startsWith('/api/tasks/options'))return Response.json(options);if(path.startsWith('/api/tasks/create'))return Response.json({...task,id:req.body.id}, {status:201});if(path.startsWith('/api/tasks/update')){revision++;return Response.json({...task,version:revision});}return Response.json({tasks:[],more:false});
  }};vm.runInNewContext(source+'\n;globalThis.hooks=familyTaskUI;',sandbox);const settle=async()=>{for(let i=0;i<10;i++)await tick();};await settle();return {elements,all,requests,task,hooks:sandbox.hooks,intercept:fn=>{intercept=fn;},settle,async submit(){await elements['task-form'].onsubmit({preventDefault(){}});}};
 }
 test('task creation requires audience consent, preserves failed draft/id, and confirms a saved report despite refresh failure',async()=>{
@@ -30,4 +30,21 @@ test('manual handoff does not invoke any external assistant or provider',async()
 });
 test('authentication denial removes task data and prevents further requests',async()=>{
  const c=await client();c.elements['task-title'].value='PRIVATE_DRAFT';c.intercept(()=>Response.json({error:'expired'},{status:401}));await assert.rejects(c.hooks.load());const count=c.requests.length;await assert.rejects(c.hooks.load());assert.equal(c.requests.length,count);assert.match(c.elements['family-tasks'].textContent,/Reload/);assert.doesNotMatch(c.elements['family-tasks'].textContent,/PRIVATE_DRAFT/);assert.deepEqual(Object.keys(c.hooks.getDrafts()),[]);
+});
+
+test('an edited draft after a lost create response can recover the original before assigning a new ID',async()=>{
+ const c=await client();c.elements['task-title'].value='Original task';c.elements['task-consent'].checked=true;let original;
+ c.intercept(r=>{if(r.path.startsWith('/api/tasks/create')){original=r.body;throw Error('response lost after commit');}});await c.submit();assert.equal(c.elements['task-recovery'].hidden,false);
+ c.elements['task-title'].value='Edited task';const before=c.requests.length;await c.submit();assert.equal(c.requests.length,before);assert.match(c.elements['task-status'].textContent,/recover/);
+ c.intercept(r=>r.path.startsWith('/api/tasks/create')?Response.json({...c.task,id:original.id}):undefined);await c.elements['task-recover'].onclick();assert.equal(c.elements['task-title'].value,'Edited task');assert.equal(c.elements['task-consent'].checked,false);assert.notEqual(c.hooks.getDrafts().family.id,original.id);assert.match(c.elements['task-status'].textContent,/edits remain as a new draft/);assert.equal(c.requests.filter(r=>r.body).at(-1).body.title,'Original task');
+});
+
+test('refresh recovers failed initial identity lookup and restores the adult audience option once',async()=>{
+ const c=await client('owner',{initialFailure:true});assert.match(c.elements['task-status'].textContent,/unavailable/);const refresh=c.all.find(e=>e.tag==='button'&&e.textContent==='Refresh');await refresh.onclick();assert.equal(c.elements['task-audience'].children.filter(o=>o.value==='parents').length,1);await refresh.onclick();assert.equal(c.elements['task-audience'].children.filter(o=>o.value==='parents').length,1);
+});
+test('completion-note drafts survive refreshes and audience switches until confirmed completion',async()=>{
+ const c=await client();c.intercept(r=>r.path.startsWith('/api/tasks?room=family')?Response.json({tasks:[c.task],nextCursor:null}):undefined);await c.hooks.load();let note=c.elements['task-result-'+c.task.id];note.value='UNSAVED_RESULT';note.oninput();await c.hooks.load();assert.equal(c.elements['task-result-'+c.task.id].value,'UNSAVED_RESULT');await c.hooks.load('parents');await c.hooks.load('family');assert.equal(c.elements['task-result-'+c.task.id].value,'UNSAVED_RESULT');
+});
+test('task cursor navigation encodes opaque references and supports returning to the first page',async()=>{
+ const c=await client(),cursor='2026-10-01 10:00:00|'+crypto.randomUUID();c.intercept(r=>r.path.startsWith('/api/tasks?')?Response.json({tasks:[],nextCursor:r.path.includes('cursor=')?null:cursor}):undefined);await c.hooks.load();assert.equal(c.elements['task-next'].hidden,false);await c.elements['task-next'].onclick();assert.ok(c.requests.at(-1).path.endsWith('cursor='+encodeURIComponent(cursor)));assert.equal(c.elements['task-previous'].hidden,false);await c.elements['task-previous'].onclick();assert.equal(c.elements['task-previous'].hidden,true);
 });
