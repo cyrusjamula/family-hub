@@ -7,10 +7,11 @@ const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
 const html=await readFile(new URL('../public/index.html',import.meta.url),'utf8');
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
-async function client(){
+async function client(person={name:'Owner',role:'owner',aiEnabled:true}){
  const all=[],elements={},listeners={},intervals=[],requests=[];
  class Element{
   constructor(tag='div'){this.tag=tag;this.children=[];this.dataset={};this.style={};this.attributes={};this.events={};this.value='';this.checked=false;this.disabled=false;this.hidden=false;this._text='';all.push(this);}
+  set id(value){this._id=value;elements[value]=this;}get id(){return this._id;}
   set textContent(value){this._text=String(value);this.children=[];}
   get textContent(){return this._text+this.children.map(x=>typeof x==='string'?x:x.textContent).join(' ');}
   append(...children){this.children.push(...children);}
@@ -20,17 +21,18 @@ async function client(){
  }
  for(const match of html.matchAll(/<([\w-]+)\b([^>]*\bid="([^"]+)"[^>]*)>/g)){const el=new Element(match[1]);el.hidden=/\bhidden\b/.test(match[2]);elements[match[3]]=el;}
  const tabs=['chat','planner','settings','advanced'].map(view=>{const el=new Element('button');el.dataset.view=view;return el;});
- const settings=new Element('section'),document={visibilityState:'visible',getElementById:id=>elements[id],createElement:tag=>new Element(tag),createTextNode:text=>String(text),querySelector:selector=>selector==='#view-settings'?settings:null,querySelectorAll:selector=>selector==='button'?all.filter(e=>e.tag==='button'):selector==='[data-view]'?tabs:[],addEventListener:(name,fn)=>{listeners[name]=fn;}};
+ const body=new Element('body');body.append(...Object.values(elements));
+ const document={body,visibilityState:'visible',getElementById:id=>elements[id],createElement:tag=>new Element(tag),createTextNode:text=>String(text),querySelectorAll:selector=>selector==='button'?all.filter(e=>e.tag==='button'):selector==='[data-view]'?tabs:[],addEventListener:(name,fn)=>{listeners[name]=fn;}};
  let intercept=null,messages={family:[{author:'Family',content:'Family current'}],parents:[{author:'Parent',content:'Parents current'}]},approvals={family:[],parents:[]};
  const response=value=>new Response(JSON.stringify(value),{headers:{'content-type':'application/json'}});
- const sandbox={document,window:{},navigator:{},Intl,Date,URL,Option:class extends Element{},setInterval:fn=>{intervals.push(fn);},fetch:async(url,options={})=>{
+ const sandbox={document,window:{location:{reload(){}}},navigator:{},Intl,Date,URL,Option:class extends Element{},setInterval:fn=>{intervals.push(fn);},fetch:async(url,options={})=>{
   const u=new URL(url,'https://hub.test'),entry={path:u.pathname,room:u.searchParams.get('room'),body:options.body?JSON.parse(options.body):undefined};requests.push(entry);
   const overridden=await intercept?.(entry);if(overridden)return overridden;
-  const route=u.pathname.slice(5);return response(route==='me'?{name:'Owner',role:'owner',aiEnabled:true}:route==='google/status'?{configured:false,connected:false}:route==='messages'?messages[entry.room]:route==='approvals'?approvals[entry.room]:[]);
+  const route=u.pathname.slice(5);return response(route==='me'?person:route==='google/status'?{configured:false,connected:false}:route==='messages'?messages[entry.room]:route==='approvals'?approvals[entry.room]:[]);
  }};
  vm.runInNewContext(app+'\n;globalThis.hooks={refresh,calendarBoundary,getRoom:()=>room};',sandbox);
  for(let i=0;i<8;i++)await tick();
- return {elements,document,listeners,intervals,requests,response,messages,approvals,hooks:sandbox.hooks,setIntercept(fn){intercept=fn;},draft(text){elements.content.value=text;elements.content.events.input();},switchRoom:room=>elements[room].onclick()};
+ return {elements,document,tabs,listeners,intervals,requests,response,messages,approvals,hooks:sandbox.hooks,setIntercept(fn){intercept=fn;},draft(text){elements.content.value=text;elements.content.events.input();},switchRoom:room=>elements[room].onclick()};
 }
 
 test('failed switch retains the displayed room, draft and submission audience',async()=>{
@@ -61,4 +63,39 @@ test('owner calendar boundaries account for winter, summer and both DST transiti
  const {calendarBoundary:boundary}= (await client()).hooks;
  assert.equal(boundary('2026-07-01'),'2026-07-01T07:00:00.000Z');assert.equal(boundary('2026-12-24'),'2026-12-24T08:00:00.000Z');
  assert.equal(Date.parse(boundary('2026-03-09'))-Date.parse(boundary('2026-03-08')),23*3600000);assert.equal(Date.parse(boundary('2026-11-02'))-Date.parse(boundary('2026-11-01')),25*3600000);assert.throws(()=>boundary('2026-02-30'));
+});
+
+test('parent and child views hide owner controls and cannot open Advanced',async()=>{
+ for(const role of ['parent','child']){
+  const c=await client({name:'Synthetic member',role,aiEnabled:true});
+  assert.equal(c.elements.parents.hidden,role==='child');
+  for(const id of ['advanced-tab','google','actions','reminders'])assert.equal(c.elements[id].hidden,true,id);
+  assert.equal(c.requests.some(r=>['/api/google/status','/api/actions','/api/reminders'].includes(r.path)),false);
+  c.tabs.find(t=>t.dataset.view==='advanced').onclick();assert.equal(c.elements['view-advanced'].hidden,true);
+  c.approvals.family=[{id:'synthetic',author:'Member',proposal:'Synthetic decision',state:'pending'}];await c.hooks.refresh();
+  assert.equal(c.elements.approvals.children[0].children.filter(e=>e.tag==='button').length,0);
+ }
+});
+test('authentication denial or a login HTML response removes private UI and blocks stale requests',async()=>{
+ for(const response of [()=>Response.json({error:'Sign in again'},{status:401}),()=>Response.json({error:'Room access denied'},{status:403}),()=>new Response('<html>Access login</html>',{headers:{'content-type':'text/html'}})]){
+  const c=await client();await c.switchRoom('parents');c.draft('Unsent private fixture');
+  c.elements['private-answer'].textContent='Private answer fixture';
+  c.setIntercept(r=>r.path==='/api/messages'?response():null);
+  await assert.rejects(c.hooks.refresh());
+  assert.doesNotMatch(c.document.body.textContent,/Parents current|Unsent private fixture|Private answer fixture/);
+  assert.match(c.document.body.textContent,/Reload/);
+  const before=c.requests.length;await assert.rejects(c.hooks.refresh());assert.equal(c.requests.length,before);
+ }
+});
+test('a late private response cannot repopulate a page after session lock',async()=>{
+ const c=await client();await c.switchRoom('parents');const gate=deferred();let held=false;
+ c.setIntercept(r=>{if(r.path!=='/api/messages')return null;if(!held){held=true;return gate.promise;}return Response.json({error:'Session changed'},{status:403});});
+ const old=c.hooks.refresh();await tick();await assert.rejects(c.hooks.refresh());
+ gate.resolve(c.response([{author:'Parent',content:'Late private fixture'}]));await old.catch(()=>{});
+ assert.doesNotMatch(c.document.body.textContent,/Late private fixture|Parents current/);assert.match(c.document.body.textContent,/Reload/);
+});
+test('ordinary service failure preserves a private draft for the same session',async()=>{
+ const c=await client();await c.switchRoom('parents');c.draft('Retry draft fixture');
+ c.setIntercept(r=>r.path==='/api/messages'?Response.json({error:'Temporarily unavailable'},{status:503}):null);
+ await assert.rejects(c.hooks.refresh());assert.equal(c.elements.content.value,'Retry draft fixture');assert.match(c.elements.messages.textContent,/Parents current/);
 });

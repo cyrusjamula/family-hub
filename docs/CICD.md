@@ -36,9 +36,32 @@ Keep the last healthy Cloudflare deployment version. If a deployment fails, insp
 
 After first deployment verify: build log passes all tests; deployed commit matches `main`; anonymous requests require Access; owner login works; live Google status remains connected; existing data and pending approval actions remain; no email, booking or calendar mutation occurs as part of a build.
 
-## Setup status
+## Verification evidence (2026-10-23, Pacific time)
 
-The source repository is public by owner choice; the live hub remains protected. The reviewed baseline is merged in PR #2. Cloudflare GitHub integration was previously connected for this repository, but builds were last observed disabled. On this follow-up, the dashboard stopped at a site-served bot security verification page, so current build configuration and the active source commit could not be verified. First verified native build, deployment SHA, failing-build demonstration in the native pipeline, and post-deployment live smoke tests remain pending in issue #3. Local automated tests of the deployment gate are separate from that live evidence.
+The native GitHub-to-Cloudflare pipeline is enabled. It builds `main` with Node 26.12.1, root `/`, build `npm run ci` and deploy `npm run deploy`. Production preview URLs are disabled, and the production URL has a Cloudflare Access policy. The active default-branch GitHub ruleset requires `validate` from GitHub Actions, an up-to-date branch, a pull request and resolved conversations; CodeQL gates also apply. The existing Dependabot PR-only bypass remains. The required review count is zero, so owner review is still a process requirement rather than an independently enforced reviewer count.
+
+| Check | Observed evidence |
+| --- | --- |
+| Successful reviewed source | Main `3bd4b20a5a2be3a031a7604badef5ab5710a28d0`; native build `062652a1-8524-4fc4-9f08-34308d8e77e6`; production version `ce5c796b` at 100% in rollout history |
+| Full regression/build checks | [GitHub validation](https://github.com/cyrusjamula/family-hub/actions/runs/40070037542) and [Cloudflare Workers Builds status](https://github.com/cyrusjamula/family-hub/runs/120801437832) passed on that source |
+| Native failure stops deployment | Build `01e4f712-8d7b-4405-bf9a-af5a3ef2d35e` on `c1e9eeac04d895e28fe35836499b060bf37a5813` ran with Node 24.22.1, failed the runtime-version regression assertion in `npm run ci`, and never entered deployment or produced a Worker version |
+| Authenticated owner smoke | Expected owner role; Chat, Plan & approvals, Settings and Advanced loaded; existing Google connection remained connected; both Drive roots passed metadata-only checks; existing Family calendar read succeeded |
+| Anonymous protection | Before owner sign-in, the production URL presented the Access login screen rather than app content; the Domains screen confirms an Access policy and disabled preview URLs |
+| Room draft isolation | An unsent synthetic Family draft was absent in Parents private, returned in Family and was cleared without submission |
+
+The native failure above is an actual CI runtime-assertion failure, not a deliberately injected failing application test on production. `test/deploy-integration.test.js` separately exercises the real deployment entry point and real npm/test subprocesses with passing and failing synthetic suites. A local executable replaces Wrangler; the child receives no provider credentials and npm is offline. Failure must exit before the local Wrangler boundary; success must reach it exactly once with `--keep-vars`. These tests complement the existing exit/signal/spawn-error and argument-forwarding coverage.
+
+No deliberate broken source, production failure, rollback, schema migration, email/calendar mutation or AI request was introduced to collect this evidence. Owner smoke tests do not complete the other members' role/alias tests (#4/#5), device tests (#7), private-record consent tests (#8), unattended jobs (#9), telemetry rollout (#14) or feedback rollout.
+
+## Rollback and migration runbook
+
+1. Record the active version, its source SHA and the prior known-good version before a release. Keep the validated source available. A listed Ready version is not proof that it serves production traffic; check the active deployment and traffic allocation.
+2. If a build or CI check fails, leave the currently active deployment in place. Fix the source or Node/configuration drift on a reviewed branch; do not bypass validation or enable production-bound previews to force a release.
+3. For an approved code rollback, open Cloudflare Deployments, select the last healthy, schema-compatible version and review the rollback/deployment dialog. Confirm the exact destination/version with the owner before applying it. Verify active traffic, Access protection and owner smoke checks after it completes. Do not choose a version merely because its timestamp is newest.
+4. Code rollback does not restore D1 data, reverse a migration or revert external provider actions. Keep migrations separate from routine builds and deployment. Review every SQL statement, current schema, additive/backward compatibility and a restricted recovery point before obtaining approval to apply a migration. Keep existing runtime variables/secrets and data bindings intact.
+5. If schema compatibility or an external action's result is uncertain, stop, retain sanitized evidence and agree on a recovery plan. Do not blindly retry provider mutations, delete data or run down-migrations. Document the source/version and resulting checks in the issue without publishing private records, identifiers or logs.
+
+This runbook is documented; no disruptive live rollback or database restore drill was performed. Such a drill is not needed to verify the existing deployment gate and requires its own reviewed operational authorization.
 
 
 ## Node security baseline
