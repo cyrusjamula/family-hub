@@ -1,0 +1,34 @@
+{
+  "name": "jamula-family-coordinator",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-23",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "jamula-family-coordinator",
+      "database_id": "d5437b6e-54ca-44b1-860d-e27c9064fb2b",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "*/15 * * * *"
+    ]
+  },
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "https://cyrus-7cd.cloudflareaccess.com",
+    "ACCESS_AUD": "bdce70c5bb6b1a40334fa006d415bea65a9ffaf62a4e940363553f002b3b7983",
+    "AI_ENABLED": "true"
+  },
+  "keep_vars": true
+}

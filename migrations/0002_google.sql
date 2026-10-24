@@ -1,0 +1,3 @@
+CREATE TABLE IF NOT EXISTS oauth_states(state_hash TEXT PRIMARY KEY, owner TEXT NOT NULL, verifier TEXT NOT NULL, nonce TEXT NOT NULL, expires INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS google_connections(owner TEXT PRIMARY KEY, credentials TEXT NOT NULL, scopes TEXT NOT NULL, connected TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS private_records(id TEXT PRIMARY KEY, owner TEXT NOT NULL, source_id TEXT NOT NULL, title TEXT NOT NULL, encrypted_content TEXT NOT NULL, source_modified TEXT, imported TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(owner,source_id));
