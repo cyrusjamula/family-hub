@@ -5,7 +5,7 @@
   "scripts": {
     "test": "node --test",
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy --keep-vars",
+    "deploy": "node scripts/deploy.mjs",
     "assets": "node scripts/build-assets.mjs",
     "build": "npm run assets && wrangler deploy --dry-run --outdir build",
     "ci": "node scripts/ci.mjs",
@@ -18,6 +18,6 @@
     "wrangler": "4.152.0"
   },
   "engines": {
-    "node": ">=24 <25"
+    "node": ">=26.12.1 <27"
   }
 }

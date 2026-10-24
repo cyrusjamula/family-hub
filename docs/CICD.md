@@ -9,12 +9,14 @@ The intended pipeline is a public GitHub source repository → Cloudflare Worker
 | Production branch | `main` |
 | Root directory | `/` |
 | Install | `npm ci` (automatic package-lock detection) |
-| Node | `24` via build environment `NODE_VERSION` |
+| Node | `26.12.1` via `.nvmrc` and matching build environment `NODE_VERSION` |
 | Build command | `npm run ci` |
 | Deploy command | `npm run deploy` |
 | Non-production/preview builds | Disabled |
 
-`ci` checks JavaScript syntax, security-critical deployment settings, the full test suite, generated asset consistency through regeneration, and a Wrangler bundle dry-run. Failed validation prevents deployment. `deploy` uses the local pinned Wrangler and `--keep-vars`. Do not enable a second deployment workflow for the same branch.
+`ci` checks JavaScript syntax, security-critical deployment settings, the full test suite, generated asset consistency through regeneration, and a Wrangler bundle dry-run. `deploy` runs `ci` itself and invokes the local pinned Wrangler with `--keep-vars` only after validation succeeds. A failure, signal, or spawn error prevents that deployment invocation. CLI flags are forwarded only to Wrangler; `npm run deploy -- --dry-run` remains a dry run. The native build command also runs validation; this intentional repetition keeps the deployment command safe when dashboard settings drift. Do not enable a second deployment workflow for the same branch.
+
+The `Validate Family Hub` GitHub Actions workflow runs the same checks on pull requests and `main`. It uses standard public-repository runners, read-only repository access, pinned action revisions, and no deployment or runtime secrets. It performs no deployment, provider writes, or AI calls. It does not replace the native Cloudflare deployment pipeline. Branch protection must separately require its `validate` job; workflow presence alone does not enforce merge rules.
 
 ## Secrets and access
 
@@ -26,7 +28,7 @@ The existing D1 binding, AI binding, runtime settings, protected workers.dev URL
 
 Work on a branch and open a PR. Run `npm ci` and `npm run ci` before merging. The native production pipeline validates `main` again before deploying. PR-specific CI/status enforcement and branch rules must be verified separately; do not claim they exist from this document alone. A solo owner can merge without another person's approval unless a ruleset is separately configured. Application approvals for sending emails/calendar events remain mandatory regardless of deployment automation.
 
-Database migrations are versioned in `migrations/` but are not automatically run by the deploy command. Current migrations 0001–0005 were already applied to the existing D1 database. Review schema changes and backup/recovery before running `npm run migrate:production`; do not apply destructive migrations implicitly. This avoids granting routine builds unnecessary D1 mutation authority.
+Database migrations are versioned in `migrations/` but are not automatically run by the deploy command. Migrations 0001–0005 were previously applied to the existing D1 database. Migration 0006 adds identity-attempt provenance and must be reviewed/applied before deploying the alias-support change; it has not been live-applied by these code changes. Review schema changes and backup/recovery before running `npm run migrate:production`; do not apply destructive migrations implicitly. This avoids granting routine builds unnecessary D1 mutation authority. See [identity rollout](IDENTITY.md).
 
 ## Recovery and verification
 
@@ -36,5 +38,9 @@ After first deployment verify: build log passes all tests; deployed commit match
 
 ## Setup status
 
-The source repository is public by owner choice; the live hub remains protected. Cloudflare GitHub integration is connected for this repository. Pipeline source is being uploaded; builds remain disabled until that succeeds. First native build and live smoke verification remain pending.
+The source repository is public by owner choice; the live hub remains protected. The reviewed baseline is merged in PR #2. Cloudflare GitHub integration was previously connected for this repository, but builds were last observed disabled. On this follow-up, the dashboard stopped at a site-served bot security verification page, so current build configuration and the active source commit could not be verified. First verified native build, deployment SHA, failing-build demonstration in the native pipeline, and post-deployment live smoke tests remain pending in issue #3. Local automated tests of the deployment gate are separate from that live evidence.
 
+
+## Node security baseline
+
+Build tooling and CI are pinned to Node 26.12.1, the October 21, 2026 security release (https://nodejs.org/en/blog/release/v26.12.1). The same advisory also patched Node 24 at 24.22.1; changing majors alone does not guarantee a security fix. Cloudflare supports a specific version via `NODE_VERSION` or `.nvmrc` (https://developers.cloudflare.com/workers/ci-cd/builds/build-image/). Set any dashboard override to exactly 26.12.1. CI rejects drift between the pin, workflow, lockfile, engine floor, and actual running Node version. The production Worker runs on Cloudflare's runtime; this Node pin controls build/test/deploy tooling. Review and test later security updates before moving the exact pin.

@@ -6,7 +6,7 @@ import {actionAPI} from './actions.js';
 import {googleAPI} from './google.js';
 import {asset} from './assets.js';
 import {createRemoteJWKSet,jwtVerify} from 'jose';
-import {member,allowRoom,canApprove,model,systemPrompt} from './policy.js';
+import {directory,allowRoom,canApprove,model,systemPrompt} from './policy.js';
 let keyset, keysetIssuer;
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json','cache-control':'no-store'}});
 export async function authenticate(request,env){
@@ -16,9 +16,18 @@ export async function authenticate(request,env){
  if(!token)throw new Error('Sign in through the private family app');
  if(!keyset||keysetIssuer!==issuer){keyset=createRemoteJWKSet(new URL('/cdn-cgi/access/certs',issuer));keysetIssuer=issuer;}
  const {payload}=await jwtVerify(token,keyset,{issuer,audience:env.ACCESS_AUD,algorithms:['RS256']});
- const email=payload.email?.toLowerCase(), user=member(email);
+ const user=directory(env.MEMBER_ALIASES).resolve(payload.email);
  if(!user)throw new Error('This account is not a family member');
- return {...user,email};
+ return user;
+}
+const auditedRoutes=new Set(['/api/chat','/api/propose','/api/approve','/api/actions/propose','/api/actions/execute','/api/reminders','/api/reminders/cancel','/api/push/subscribe','/api/push/disable','/api/push/test','/api/private-ai','/api/google/connect','/api/google/disconnect','/api/google/import','/api/google/callback']);
+export async function auditIdentity(request,env,user){
+ const url=new URL(request.url);
+ if(!auditedRoutes.has(url.pathname)||!(request.method==='POST'||url.pathname==='/api/google/callback'&&request.method==='GET'))return;
+ if(request.method==='POST'&&request.headers.get('origin')!==url.origin)return;
+ // Record the authenticated attempt before side effects; this is not proof of success.
+ // No payload, question, query string, OAuth code, token or private content is stored.
+ await env.DB.prepare('INSERT INTO identity_audit(id,member_id,sign_in_email,route,method) VALUES(?,?,?,?,?)').bind(crypto.randomUUID(),user.id,user.signInEmail,url.pathname,request.method).run();
 }
 export async function api(request,env,user){
  const url=new URL(request.url), path=url.pathname;
@@ -27,7 +36,7 @@ export async function api(request,env,user){
  if(path.startsWith('/api/reminders'))return reminderAPI(request,env,user);
  if(path.startsWith('/api/actions'))return actionAPI(request,env,user);
  if(path.startsWith('/api/google/'))return googleAPI(request,env,user);
- if(path==='/api/me')return json({name:user.name,role:user.role,aiEnabled:env.AI_ENABLED==='true',googleConnected:false});
+ if(path==='/api/me')return json({id:user.id,name:user.name,role:user.role,aiEnabled:env.AI_ENABLED==='true',googleConnected:false});
  const room=url.searchParams.get('room')||'family';
  if(!allowRoom(user,room))return json({error:'Room access denied'},403);
  if(request.method==='GET'&&path==='/api/briefs'){return json((await env.DB.prepare('SELECT * FROM briefs WHERE room=?').bind(room).all()).results);}
@@ -70,6 +79,7 @@ export async function api(request,env,user){
 export default {async scheduled(_event,env,ctx){ctx.waitUntil((async()=>{await deliverDue(env);await publishNotices(env);})());},async fetch(request,env){
  let user;try{user=await authenticate(request,env);}catch{return json({error:'Private app: verified family sign-in required.'},401);}
  try{
+ await auditIdentity(request,env,user);
  const response=new URL(request.url).pathname.startsWith('/api/')?await api(request,env,user):(env.ASSETS?await env.ASSETS.fetch(request):asset(request));
  const secured=new Response(response.body,response);secured.headers.set('cache-control','no-store');secured.headers.set('x-content-type-options','nosniff');secured.headers.set('referrer-policy','no-referrer');secured.headers.set('content-security-policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");return secured;
  }catch{return json({error:'Service unavailable. If you submitted an external action, its result may be uncertain; check Google before creating another action.'},503);}
