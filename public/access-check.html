@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Check my access · Fam Jam</title><link rel="stylesheet" href="/style.css"></head>
+<body><main class="app-shell"><header class="topbar"><h1>Check my access</h1><a href="/">Back to Hub</a></header>
+<p>Sign in with your own account. These checks read your role and test access to a few existing endpoints. They do not send messages, create events, call AI, or change permissions.</p>
+<p>Private response contents are discarded without being displayed. Results stay on this page.</p>
+<button type="button" id="run-check">Run access check</button><p id="check-status" role="status" aria-live="polite">Ready when you are.</p>
+<p id="check-identity"></p><table aria-label="Access check results"><thead><tr><th>Check</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead><tbody id="check-results"></tbody></table>
+<p>If a check fails, stop and tell Cyrus the check name and result. Do not copy messages, records, addresses or login codes into GitHub.</p></main><script type="module" src="/access-check.js"></script></body></html>
