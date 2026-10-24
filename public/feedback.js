@@ -51,6 +51,7 @@ async function listFeedback(){
 }
 async function showFeedbackReport(id){
  const row=await feedbackRequest('/report?id='+encodeURIComponent(id));feedbackSelected=row;clearPublicPreview();
+ document.querySelector('#feedback-dialog details.panel').open=true;
  feedbackEl('feedback-report').hidden=false;feedbackEl('feedback-report-title').textContent=row.title;
  const details=feedbackEl('feedback-report-details');details.textContent=[row.reporter+' · '+row.state,row.details,'Context: '+row.context,'Public first-name permission: '+(row.includeName?'yes':'no')].join('\n\n');
  if(row.issueUrl){const a=document.createElement('a');a.href=row.issueUrl;a.textContent='Open GitHub issue';a.target='_blank';a.rel='noopener noreferrer';details.append(document.createTextNode('\n'),a);}
