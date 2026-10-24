@@ -49,3 +49,8 @@ test('duplicate required sections fail closed even when a later section contains
   const i=issue(1);i.body+='\n## '+heading+'\nsrc/actions.js';i.comments[0].body='/factory approve '+issueScopeDigest(i);assert.equal(planFactory(snapshot([i]),now).selected.length,0,heading);
  }
 });
+test('review PRs keep file and issue locks but leave coding slots available for unrelated tasks',()=>{
+ const active=[{issue:9,relatedIssues:[1],state:'review',files:['public/task-1.js']}];
+ const p=planFactory(snapshot([issue(1,'public/task-1.js'),issue(2),issue(3)],active),now);assert.deepEqual(p.selected.map(i=>i.issue),[2,3]);assert.match(p.blocked[0].reason,/already active/);
+ assert.throws(()=>planFactory(snapshot([issue(2)],[{...active[0],relatedIssues:['untrusted']}]),now));
+});
