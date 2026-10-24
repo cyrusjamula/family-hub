@@ -36,7 +36,7 @@ test('malformed active run scope blocks planning rather than assuming no conflic
 });
 test('dot segments, root scopes and repeated separators cannot bypass protection or conflicts',()=>{
  for(const file of ['./src/policy.js','.','./','public/./app.js','public//app.js','public/../src/policy.js'])assert.equal(planFactory(snapshot([issue(1,file)]),now).selected.length,0,file);
- for(const file of ['src/actions.js','src/push.js','src/reminders.js','src/private-ai.js','src/feedback.js','src/quota.js'])assert.equal(planFactory(snapshot([issue(1,file)]),now).selected.length,0,file);
+ for(const file of ['src/actions.js','src/push.js','src/reminders.js','src/private-ai.js','src/feedback.js','src/quota.js','src/vault.js','src/telemetry.js'])assert.equal(planFactory(snapshot([issue(1,file)]),now).selected.length,0,file);
  const directory=issue(1,'public/'),file=issue(2,'public/app.js');assert.equal(planFactory(snapshot([directory,file]),now).selected.length,1);
  for(const file of ['', '.', './public/app.js','public//app.js','../private','/absolute'])assert.throws(()=>planFactory(snapshot([issue(1)],[{issue:2,state:'running',files:[file]}]),now),file);
 });
