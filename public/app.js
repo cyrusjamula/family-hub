@@ -83,3 +83,7 @@ async function deviceAct(id,fn){$(id).disabled=true;$('error').textContent='';tr
 
 
 const accessCheckLink=document.createElement('a');accessCheckLink.href='/access-check.html';accessCheckLink.textContent='Check my access';$('view-settings').append(accessCheckLink);
+
+// Load daily task intake without adding private configuration to generated markup.
+if(document.head){const tasksModule=document.createElement('script');tasksModule.type='module';tasksModule.src='/tasks.js';document.head.append(tasksModule);}
+document.addEventListener('hub-session-locked',lockSession);
