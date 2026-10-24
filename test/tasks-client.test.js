@@ -1,16 +1,16 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {readFile} from 'node:fs/promises';
 const source=await readFile(new URL('../public/tasks.js',import.meta.url),'utf8'),tick=()=>new Promise(r=>setImmediate(r));
 async function client(role='owner',{initialFailure=false}={}){
- const elements={},all=[],requests=[];let intercept,revision=1;
+ const elements={},all=[],requests=[],events=[];let intercept,revision=1;
  class E{constructor(tag='div',text=''){this.tag=tag;this.children=[];this.value='';this._text=text;this.isConnected=true;this.disabled=false;this.checked=false;all.push(this);}set id(v){this._id=v;elements[v]=this;}get id(){return this._id;}set textContent(t){this._text=String(t);this.children=[];}get textContent(){return this._text+this.children.map(c=>c.textContent||'').join(' ');}append(...c){this.children.push(...c);}prepend(...c){this.children.unshift(...c);}replaceChildren(...c){this._text='';this.children=c;}setAttribute(k,v){this[k]=v;}querySelectorAll(){return all.filter(e=>['button','input','textarea','select'].includes(e.tag));}}
  const host=new E('section');host.id='view-planner';
  const owner={id:role==='owner'?'cyrus':'iyanah',role};
  const options={members:[{id:owner.id,name:'Synthetic member'}],assistants:[{id:'human',name:'Human only'}]};
  const task={id:crypto.randomUUID(),title:'Synthetic task',details:'Fixture only',room:'family',assignee:'Synthetic member',assignee_id:owner.id,creator:'Synthetic member',creator_id:owner.id,assistantName:'Human only',approval:'not_required',status:'todo',version:revision,canUpdate:true,canApprove:false};
- const sandbox={document:{getElementById:id=>elements[id],createElement:tag=>new E(tag),addEventListener(){},dispatchEvent(){}},crypto,navigator:{clipboard:{async writeText(){}}},Event,fetch:async(path,opt={})=>{
+ const sandbox={document:{getElementById:id=>elements[id],createElement:tag=>new E(tag),addEventListener(){},dispatchEvent(event){events.push(event);}},crypto,CustomEvent,navigator:{clipboard:{async writeText(){}}},Event,fetch:async(path,opt={})=>{
   const req={path,body:opt.body?JSON.parse(opt.body):undefined};requests.push(req);const custom=await intercept?.(req);if(custom)return custom;
   if(path==='/api/me'){if(initialFailure){initialFailure=false;return Response.json({error:'temporarily unavailable'},{status:503});}return Response.json(owner);}if(path.startsWith('/api/tasks/options'))return Response.json(options);if(path.startsWith('/api/tasks/create'))return Response.json({...task,id:req.body.id}, {status:201});if(path.startsWith('/api/tasks/update')){revision++;return Response.json({...task,version:revision});}return Response.json({tasks:[],more:false});
- }};vm.runInNewContext(source+'\n;globalThis.hooks=familyTaskUI;',sandbox);const settle=async()=>{for(let i=0;i<10;i++)await tick();};await settle();return {elements,all,requests,task,hooks:sandbox.hooks,intercept:fn=>{intercept=fn;},settle,async submit(){await elements['task-form'].onsubmit({preventDefault(){}});}};
+ }};vm.runInNewContext(source+'\n;globalThis.hooks=familyTaskUI;',sandbox);const settle=async()=>{for(let i=0;i<10;i++)await tick();};await settle();return {elements,all,requests,events,task,hooks:sandbox.hooks,intercept:fn=>{intercept=fn;},settle,async submit(){await elements['task-form'].onsubmit({preventDefault(){}});}};
 }
 test('task creation requires audience consent, preserves failed draft/id, and confirms a saved report despite refresh failure',async()=>{
  const c=await client();c.elements['task-title'].value='My synthetic task';await c.submit();assert.equal(c.requests.some(r=>r.body),false);assert.match(c.elements['task-status'].textContent,/audience/);
@@ -47,4 +47,14 @@ test('completion-note drafts survive refreshes and audience switches until confi
 });
 test('task cursor navigation encodes opaque references and supports returning to the first page',async()=>{
  const c=await client(),cursor='2026-10-01 10:00:00|'+crypto.randomUUID();c.intercept(r=>r.path.startsWith('/api/tasks?')?Response.json({tasks:[],nextCursor:r.path.includes('cursor=')?null:cursor}):undefined);await c.hooks.load();assert.equal(c.elements['task-next'].hidden,false);await c.elements['task-next'].onclick();assert.ok(c.requests.at(-1).path.endsWith('cursor='+encodeURIComponent(cursor)));assert.equal(c.elements['task-previous'].hidden,false);await c.elements['task-previous'].onclick();assert.equal(c.elements['task-previous'].hidden,true);
+});
+
+test('definitively rejected recovery releases the pending ID and keeps edited text available to save',async()=>{
+ const c=await client();c.elements['task-title'].value='   ';c.elements['task-consent'].checked=true;c.intercept(r=>{if(r.path.startsWith('/api/tasks/create'))throw Error('offline before response');});await c.submit();const original=c.requests.findLast(r=>r.body).body.id;
+ c.elements['task-title'].value='Corrected title';await c.submit();c.intercept(r=>r.path.startsWith('/api/tasks/create')?Response.json({error:'Invalid original title'},{status:400}):undefined);await c.elements['task-recover'].onclick();assert.equal(c.elements['task-title'].value,'Corrected title');assert.equal(c.elements['task-recovery'].hidden,true);assert.equal(c.elements['task-consent'].checked,false);assert.notEqual(c.hooks.getDrafts().family.id,original);
+ c.intercept(null);c.elements['task-consent'].checked=true;await c.submit();assert.match(c.elements['task-status'].textContent,/Task saved/);assert.equal(c.requests.findLast(r=>r.body).body.title,'Corrected title');
+});
+
+test('coordinator handoff prepares a room-specific draft without sending task content to a provider',async()=>{
+ const c=await client();c.task.assistant='coordinator';c.task.room='parents';c.intercept(r=>r.path.startsWith('/api/tasks?')?Response.json({tasks:[c.task],nextCursor:null}):undefined);await c.hooks.load('parents');const before=c.requests.length;await c.all.find(e=>e.tag==='button'&&e.textContent==='Open in coordinator chat').onclick();assert.equal(c.requests.length,before);assert.equal(c.events.at(-1).type,'task-compose');assert.equal(c.events.at(-1).detail.room,'parents');assert.match(c.events.at(-1).detail.content,/Parents private/);
 });

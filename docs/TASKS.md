@@ -2,7 +2,7 @@
 
 Use Plan & approvals → Family tasks for daily coordination. Add a task, choose an audience, responsible person and assistant, record the source, then follow its progress. An assistant choice creates a manual handoff, not an API call. The owner is the only task approver. Completion requires a result/source note and any required approval.
 
-Task approval is a recorded decision. It never sends a message, creates an event, books or purchases anything. Calendar/email actions retain their separate exact-action approvals. Clipboard copying is an explicit user action with a reviewable prompt; no assistant receives data automatically. ChatGPT and the four consumer Copilot selections use existing accounts manually. The Hub coordinator remains available in Chat. Muse is excluded.
+Task approval is a recorded decision. It never sends a message, creates an event, books or purchases anything. Calendar/email actions retain their separate exact-action approvals. Clipboard copying is an explicit user action with a reviewable prompt; no assistant receives data automatically. ChatGPT and the four consumer Copilot selections use existing accounts manually. For Hub coordinator tasks, Open in coordinator chat prepares a draft in the matching room, preserves other drafts and sends nothing until the user reviews and selects Ask coordinator. The existing pilot quota still applies. Muse is excluded.
 
 ## Audience and provenance
 

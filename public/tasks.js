@@ -54,6 +54,7 @@ function startFamilyTasks(){
   for(const task of page.tasks){
    const card=el('details'),label=el('summary',task.title+' · '+task.assignee+' · '+task.status);card.append(label,el('p',task.details),el('p','Assistant: '+task.assistantName+' · Approval: '+task.approval),el('p','Created by '+task.creator+' · '+task.created),el('p','Source: '+(task.provenance||'Hub submission')));
    if(task.result_note)card.append(el('p','Result: '+task.result_note));
+   if(task.assistant==='coordinator'){const discuss=el('button','Open in coordinator chat');discuss.type='button';discuss.onclick=()=>document.dispatchEvent(new CustomEvent('task-compose',{detail:{room:task.room,content:handoff(task)}}));card.append(discuss);}
    const copy=el('button','Prepare assistant handoff');copy.type='button';copy.onclick=()=>{
     const text=handoff(task),preview=el('textarea');preview.value=text;preview.readOnly=true;preview.setAttribute('aria-label','Manual assistant handoff');
     const copyText=el('button','Copy handoff');copyText.type='button';copyText.onclick=async()=>{try{await navigator.clipboard.writeText(text);status.textContent='Copied. Paste into the selected assistant yourself after reviewing the audience.';}catch{status.textContent='Copy is unavailable here. Select and copy the handoff text.';}};
@@ -85,7 +86,10 @@ function startFamilyTasks(){
  });};
  recover.onclick=()=>run(async()=>{
   remember();const target=room,original=pendingCreates[target];if(!original)return;
-  const saved=await request('tasks/create?room='+target,original);if(saved.id!==original.id)throw Error('Recovery was not confirmed. Keep both drafts and retry.');
+  let saved;try{saved=await request('tasks/create?room='+target,original);}catch(error){
+   if([400,413,415,429].includes(error.status)){pendingCreates[target]=null;drafts[target]={...drafts[target],id:crypto.randomUUID(),confirmRoomVisibility:false};populate();throw Error(error.message+' The previous submission was rejected. Your edited draft is kept; review its audience and save it separately.');}
+   throw error;
+  }if(saved.id!==original.id)throw Error('Recovery was not confirmed. Keep both drafts and retry.');
   const edited=JSON.stringify(drafts[target])!==JSON.stringify(original);pendingCreates[target]=null;drafts[target]=edited?{...drafts[target],id:crypto.randomUUID(),confirmRoomVisibility:false}:{id:crypto.randomUUID()};populate();
   try{await load();}catch{}
   status.textContent=edited?'Previous task saved. Your edits remain as a new draft; review the audience before saving them separately.':'Previous task saved and recovered. No duplicate was created.';

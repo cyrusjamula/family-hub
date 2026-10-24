@@ -87,3 +87,13 @@ const accessCheckLink=document.createElement('a');accessCheckLink.href='/access-
 // Load daily task intake without adding private configuration to generated markup.
 if(document.head){const tasksModule=document.createElement('script');tasksModule.type='module';tasksModule.src='/tasks.js';document.head.append(tasksModule);}
 document.addEventListener('hub-session-locked',lockSession);
+
+// Prepare an explicit coordinator draft; the user still reviews and sends it.
+document.addEventListener('task-compose',event=>act(async()=>{
+ const target=event.detail?.room,content=event.detail?.content;
+ if(!['family','parents'].includes(target)||typeof content!=='string'||!content.trim()||content.length>4000)throw Error('Shorten this task handoff before opening it in Chat.');
+ if(!me||target==='parents'&&me.role==='child')throw Error('This conversation is unavailable to your account.');
+ if((target===room?$('content').value:drafts[target]||'').trim())throw Error('Finish or clear the existing draft in that conversation before opening a task.');
+ await switchRoom(target);if(sessionLocked)throw Error(sessionNotice);
+ $('content').value=content;drafts[target]=content;showView('chat');
+}));

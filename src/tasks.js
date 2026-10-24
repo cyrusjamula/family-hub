@@ -13,7 +13,7 @@ export function validateTask(body,user,room){
  if(typeof body.provenance!=='string'||body.provenance.length>500)throw Error('Keep the source note under 500 characters.');
  return {room,creator_id:user.id,assignee_id:body.assignee,assistant:body.assistant,title:body.title.trim(),details:body.details.trim(),source:'hub',provenance:body.provenance.trim(),approval_required:Number(body.approvalRequired),approval:body.approvalRequired?'requested':'not_required'};
 }
-function visible(row,user){return {...row,creator:people[row.creator_id]?.name||'Family member',assignee:people[row.assignee_id]?.name||'Family member',assistantName:assistants[row.assistant],canUpdate:user.role==='owner'||row.creator_id===user.id||row.assignee_id===user.id,canApprove:user.role==='owner'&&row.approval==='requested'};}
+function visible(row,user){return {...row,creator:people[row.creator_id]?.name||'Family member',assignee:people[row.assignee_id]?.name||'Family member',assistantName:assistants[row.assistant],canUpdate:user.role==='owner'||row.creator_id===user.id||row.assignee_id===user.id,canApprove:user.role==='owner'&&row.approval==='requested'&&!['done','cancelled'].includes(row.status)};}
 export async function taskAPI(request,env,user){
  if(!validUser(user))return json({error:'Verified family identity required'},403);
  const url=new URL(request.url),room=url.searchParams.get('room')||'family';

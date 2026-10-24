@@ -54,3 +54,7 @@ test('all retained tasks remain reachable across cursor pages, including shared 
   assert.equal((await api('?room=family&cursor='+encodeURIComponent("bad' OR 1=1"),undefined,child)).status,400);
  }finally{sql.close();}
 });
+
+test('cancelled tasks do not advertise approval controls that can no longer be used',async()=>{
+ const {sql,api}=fixture();try{const body=draft();await api('/create?room=family',body,child);const cancelled=await (await api('/update?room=family',{id:body.id,version:1,action:'status',status:'cancelled'},child)).json();assert.equal(cancelled.canApprove,false);const page=await (await api('?room=family&state=all')).json();assert.equal(page.tasks[0].status,'cancelled');assert.equal(page.tasks[0].canApprove,false);assert.equal((await api('/update?room=family',{id:body.id,version:2,action:'approve'})).status,409);}finally{sql.close();}
+});
