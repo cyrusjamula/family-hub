@@ -1,4 +1,4 @@
-import {seal,open} from './google.js';
+import {seal,open} from './vault.js';
 import {member} from './policy.js';
 import {digest} from './actions.js';
 
@@ -48,8 +48,15 @@ export async function feedbackAPI(request,env,user,send=fetch){
  try{
   if(request.method==='GET'){
    if(path==='/api/feedback'){
-    const rows=await (user.role==='owner'?env.DB.prepare('SELECT id,reporter,reporter_id,state,issue_url,created FROM feedback ORDER BY created DESC LIMIT 30'):env.DB.prepare('SELECT id,reporter,reporter_id,state,issue_url,created FROM feedback WHERE reporter=? ORDER BY created DESC LIMIT 30').bind(user.email)).all();
-    return json(rows.results.map(r=>({id:r.id,reporter:member(r.reporter)?.name,state:r.state,issueUrl:r.issue_url,created:r.created})));
+    const state=url.searchParams.get('state')||(user.role==='owner'?'pending':'all'),cursor=url.searchParams.get('cursor');
+    if(!['pending','all'].includes(state))return json({error:'Invalid queue filter'},400);
+    const where=[],args=[];
+    if(user.role!=='owner'){where.push('reporter=?');args.push(user.email);}
+    if(state==='pending')where.push("state='pending'");
+    if(cursor){const [created,id,...extra]=cursor.split('|');if(extra.length||!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(created)||!uuid.test(id))return json({error:'Invalid queue cursor'},400);where.push('(created<? OR (created=? AND id<?))');args.push(created,created,id);}
+    const rows=await env.DB.prepare('SELECT id,reporter,reporter_id,state,issue_url,created FROM feedback'+(where.length?' WHERE '+where.join(' AND '):'')+' ORDER BY created DESC,id DESC LIMIT 31').bind(...args).all();
+    const page=rows.results.slice(0,30),last=page.at(-1);
+    return json({reports:page.map(r=>({id:r.id,reporter:member(r.reporter)?.name,state:r.state,issueUrl:r.issue_url,created:r.created})),nextCursor:rows.results.length>30?last.created+'|'+last.id:null});
    }
    const id=url.searchParams.get('id');if(!uuid.test(id))return json({error:'Invalid report ID'},400);
    const row=await env.DB.prepare('SELECT * FROM feedback WHERE id=?').bind(id).first();
@@ -76,7 +83,7 @@ export async function feedbackAPI(request,env,user,send=fetch){
    const encrypted=await seal(env,payload,'feedback:'+user.email+':'+body.id),image=screenshot?await seal(env,screenshot,'feedback-image:'+user.email+':'+body.id):null;
    // Atomic per-person daily limit; aliases use the same immutable storage owner.
    const saved=await env.DB.prepare("INSERT OR IGNORE INTO feedback(id,reporter,reporter_id,payload,screenshot,digest) SELECT ?,?,?,?,?,? WHERE (SELECT count(*) FROM feedback WHERE reporter=? AND created>=date('now'))<5 RETURNING id").bind(body.id,user.email,user.id,encrypted,image,hash,user.email).first();
-   if(!saved){const retry=await env.DB.prepare('SELECT * FROM feedback WHERE id=?').bind(body.id).first();if(retry?.reporter===user.email&&retry.digest===hash)return json({id:retry.id,state:retry.state});return json({error:'Five reports per person per day; check for an existing submission'},429);}
+   if(!saved){const retry=await env.DB.prepare('SELECT * FROM feedback WHERE id=?').bind(body.id).first();if(retry)return retry.reporter===user.email&&retry.digest===hash?json({id:retry.id,state:retry.state}):json({error:'Submission ID already used; start a new report'},409);return json({error:'Five reports per person per day; check for an existing submission'},429);}
    return json({id:body.id,state:'pending',note:'Saved privately for Cyrus. Nothing was sent to GitHub.'});
   }
   if(!uuid.test(body.id))return json({error:'Invalid report ID'},400);

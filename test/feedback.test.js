@@ -1,11 +1,13 @@
+import {people} from '../src/policy.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,readdirSync} from 'node:fs';
 import {feedbackAPI,validateScreenshot,issuePayload} from '../src/feedback.js';
 import {directory,member} from '../src/policy.js';
-import {open} from '../src/google.js';
-const owner=member('cjamula@gmail.com'),child=member('iyanah.j11@gmail.com'),adult=member('anhaita.jamula@gmail.com');
+import {open} from '../src/vault.js';
+import {base64} from '../src/vault.js';
+const owner=member(people.cyrus.email),child=member(people.iyanah.email),adult=member(people.anhaita.email);
 const image={type:'image/png',data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jL1sAAAAASUVORK5CYII='};
 const req=(route,body,origin='https://hub.test')=>new Request('https://hub.test/api/feedback'+route,body===undefined?{}:{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify(body)});
 const draft=()=>({id:crypto.randomUUID(),title:'Synthetic feedback',details:'Only synthetic details',includeContext:true,context:'chat',includeName:false,confirmPrivateFeedback:true});
@@ -38,6 +40,27 @@ test('screenshots require separate permission, supported type, signature and bou
  assert.equal((await api('/submit',body,child)).status,400);assert.equal(sql.prepare('SELECT count(*) AS n FROM feedback').get().n,0);
  assert.equal((await api('/submit',{...body,confirmScreenshot:true},child)).status,200);sql.close();
 });
+test('100 KB and full 150 KB screenshots encrypt, save and round-trip without argument-limit failures',async()=>{
+ const {sql,api}=fixture();
+ for(const size of [100000,150000]){
+  const bytes=new Uint8Array(size);bytes.set([137,80,78,71,13,10,26,10]);
+  const body={...draft(),confirmScreenshot:true,screenshot:{type:'image/png',data:base64(bytes)}};
+  assert.equal((await api('/submit',body,child)).status,200);
+  const response=await api('/image?id='+body.id,undefined,owner);assert.equal(response.status,200);assert.deepEqual(new Uint8Array(await response.arrayBuffer()),bytes);
+ }
+ sql.close();
+});
+test('pending reports remain reachable across pages despite newer completed reports and shared timestamps',async()=>{
+ const {sql,api}=fixture(),expected=new Set();
+ const insert=sql.prepare('INSERT INTO feedback(id,reporter,reporter_id,payload,digest,state,created) VALUES(?,?,?,?,?,?,?)');
+ for(let i=0;i<65;i++){const id=crypto.randomUUID();expected.add(id);insert.run(id,child.email,child.id,'unused','unused','pending','2026-10-01 10:00:00');}
+ for(let i=0;i<35;i++)insert.run(crypto.randomUUID(),adult.email,adult.id,'unused','unused','published','2026-10-02 10:00:00');
+ let cursor=null;const seen=[];
+ do{const page=await (await api(cursor?'?cursor='+encodeURIComponent(cursor):'')).json();seen.push(...page.reports.map(r=>r.id));assert.ok(page.reports.every(r=>r.state==='pending'));cursor=page.nextCursor;}while(cursor);
+ assert.equal(seen.length,65);assert.deepEqual(new Set(seen),expected);
+ const adultPage=await (await api('',undefined,adult)).json();assert.equal(adultPage.reports.length,30);assert.ok(adultPage.reports.every(r=>r.reporter==='Anhaita'));
+ assert.equal((await api('?cursor='+encodeURIComponent("bad' OR 1=1"))).status,400);assert.equal((await api('?state=invalid')).status,400);sql.close();
+});
 test('private feedback and encrypted screenshots are visible only to reporter and owner',async()=>{
  const {sql,api}=fixture(),body={...draft(),confirmScreenshot:true,screenshot:image};await api('/submit',body,child);
  for(const user of [child,owner]){
@@ -45,7 +68,7 @@ test('private feedback and encrypted screenshots are visible only to reporter an
   const picture=await api('/image?id='+body.id,undefined,user);assert.equal(picture.status,200);assert.equal(picture.headers.get('content-type'),'image/png');assert.equal(picture.headers.get('cache-control'),'no-store');assert.equal((await picture.arrayBuffer()).byteLength,atob(image.data).length);
  }
  for(const path of ['/report?id=','/image?id='])assert.equal((await api(path+body.id,undefined,adult)).status,404);
- assert.deepEqual(await (await api('',undefined,adult)).json(),[]);assert.equal((await (await api('',undefined,child)).json()).length,1);
+ assert.deepEqual((await (await api('',undefined,adult)).json()).reports,[]);assert.equal((await (await api('',undefined,child)).json()).reports.length,1);
  const stored=sql.prepare('SELECT * FROM feedback').get();assert.ok(!stored.screenshot.includes(image.data));sql.close();
 });
 test('feedback submissions are idempotent across concurrent retries and alias sign-ins',async()=>{
@@ -94,4 +117,12 @@ test('rejected reports cannot publish and oversized submissions never persist',a
  const review={id:body.id,publicTitle:'Reviewed',publicDetails:'Safe'},preview=await (await api('/preview',review)).json();
  assert.equal((await api('/publish',{...review,digest:preview.digest,confirmPublicIssue:true})).status,409);
  assert.equal((await api('/submit',{...draft(),extra:'x'.repeat(226000)},child)).status,400);assert.equal(sql.prepare('SELECT count(*) AS n FROM feedback').get().n,1);sql.close();
+});
+
+test('concurrent reuse of an ID with a different payload or reporter returns conflict, not quota',async()=>{
+ for(const otherPerson of [false,true]){
+  const {sql,api}=fixture(),body=draft();
+  const results=await Promise.all([api('/submit',body,child),api('/submit',otherPerson?body:{...body,details:'Different payload'},otherPerson?adult:child)]);
+  assert.deepEqual(results.map(r=>r.status).sort(),[200,409]);assert.equal(sql.prepare('SELECT count(*) AS n FROM feedback').get().n,1);sql.close();
+ }
 });
