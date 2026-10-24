@@ -88,3 +88,9 @@ test('unchecked section consent transmits no current section in the POST body',a
  const submitted=c.requests.find(r=>r.url.endsWith('/submit')).body;assert.equal(submitted.includeContext,false);assert.equal(submitted.context,'unspecified');
  const opted=await client();fill(opted);opted.elements['feedback-context'].checked=true;await opted.hooks.prepareFeedback();assert.equal(opted.hooks.getDraft().context,'chat');
 });
+test('a supplied diagnostic UUID is displayed in private review and linked only on explicit submission',async()=>{
+ const c=await client(),reference='123e4567-e89b-42d3-a456-426614174000';fill(c);c.elements['feedback-reference'].value=reference;
+ await c.hooks.prepareFeedback();assert.equal(c.hooks.getDraft().relatedRequestId,reference);assert.match(c.elements['feedback-review-text'].textContent,new RegExp(reference));
+ assert.equal(c.requests.some(r=>r.body),false);c.elements['feedback-submit-consent'].checked=true;c.elements['feedback-form'].onsubmit({preventDefault(){}});await c.settle();
+ assert.equal(c.requests.find(r=>r.url.endsWith('/submit')).body.relatedRequestId,reference);
+});

@@ -20,7 +20,7 @@ async function client(){
  }
  for(const match of html.matchAll(/<([\w-]+)\b([^>]*\bid="([^"]+)"[^>]*)>/g)){const el=new Element(match[1]);el.hidden=/\bhidden\b/.test(match[2]);elements[match[3]]=el;}
  const tabs=['chat','planner','settings','advanced'].map(view=>{const el=new Element('button');el.dataset.view=view;return el;});
- const document={visibilityState:'visible',getElementById:id=>elements[id],createElement:tag=>new Element(tag),createTextNode:text=>String(text),querySelectorAll:selector=>selector==='button'?all.filter(e=>e.tag==='button'):selector==='[data-view]'?tabs:[],addEventListener:(name,fn)=>{listeners[name]=fn;}};
+ const settings=new Element('section'),document={visibilityState:'visible',getElementById:id=>elements[id],createElement:tag=>new Element(tag),createTextNode:text=>String(text),querySelector:selector=>selector==='#view-settings'?settings:null,querySelectorAll:selector=>selector==='button'?all.filter(e=>e.tag==='button'):selector==='[data-view]'?tabs:[],addEventListener:(name,fn)=>{listeners[name]=fn;}};
  let intercept=null,messages={family:[{author:'Family',content:'Family current'}],parents:[{author:'Parent',content:'Parents current'}]},approvals={family:[],parents:[]};
  const response=value=>new Response(JSON.stringify(value),{headers:{'content-type':'application/json'}});
  const sandbox={document,window:{},navigator:{},Intl,Date,URL,Option:class extends Element{},setInterval:fn=>{intervals.push(fn);},fetch:async(url,options={})=>{

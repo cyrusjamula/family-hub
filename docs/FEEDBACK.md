@@ -35,4 +35,4 @@ At implementation time, no production migration, feature flag, GitHub credential
 
 ## Telemetry
 
-Issue #14 separately tracks restricted operational telemetry, correlation IDs and release information. This feature does not claim to have captured diagnostics that are not implemented. Add telemetry through explicit sanitized field allowlists and the existing preview/approval flow; never attach raw logs or shared-room content automatically.
+Issue #14 tracks restricted operational telemetry and correlation IDs. A reporter may optionally add a UUID request reference to the private report; the reference and validated Hub release are stored in its encrypted payload. The owner can review both in triage, and they are included in the exact GitHub preview for explicit approval. No raw logs, browser text, stacks or shared-room content are attached automatically.

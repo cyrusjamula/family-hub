@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
-import {diagnosticMetadata,storeDiagnostic,instrumentRequest,instrumentScheduled,diagnosticsAPI} from '../src/telemetry.js';
+import {diagnosticMetadata,storeDiagnostic,instrumentRequest,instrumentScheduled,diagnosticsAPI,browserDiagnosticsAPI} from '../src/telemetry.js';
 import {member,people} from '../src/policy.js';
 import {generateKeyPair,exportJWK,SignJWT} from 'jose';
 import worker from '../src/worker.js';
@@ -68,8 +68,34 @@ test('scheduled failures are recorded without raw exception details and preserve
  await assert.rejects(instrumentScheduled(env,async()=>{runs++;throw Error('SYNTHETIC_PRIVATE_PUSH_ENDPOINT');}),error=>error.message.startsWith('Scheduled Hub job failed. Reference: ')&&!error.message.includes('SYNTHETIC_PRIVATE_PUSH_ENDPOINT'));
  assert.equal(runs,1);const row=sql.prepare('SELECT * FROM diagnostics').get();assert.equal(row.method,'SCHEDULED');assert.equal(row.category,'scheduled_error');assert.equal(JSON.stringify(row).includes('SYNTHETIC_PRIVATE_PUSH_ENDPOINT'),false);sql.close();
 });
-test('diagnostic lookup enforces real Access JWT verification and role boundaries through the Worker',async()=>{
- const {sql,env,ctx,drain}=fixture(),id=crypto.randomUUID();await storeDiagnostic(env,{id,created:Date.now(),route:'/api/chat',method:'POST',status:503,duration_ms:1,category:'service_error',release:'unknown'});
+test('opted-in browser events accept only fixed fields and receive server references',async()=>{
+ const {sql,env,ctx,drain}=fixture(),id=crypto.randomUUID();
+ const request=new Request('https://hub.test/api/diagnostics/browser?private=QUERY_SECRET',{method:'POST',headers:{origin:'https://hub.test','content-type':'application/json'},body:JSON.stringify({type:'exception',section:'chat',message:'PRIVATE_MESSAGE',stack:'PRIVATE_STACK',url:'https://private.test/?token=SECRET',email:owner.email})});
+ const response=await browserDiagnosticsAPI(request,env,child,{id,ctx});await drain();
+ assert.equal(response.status,202);assert.equal((await response.json()).requestId,id);
+ const row=sql.prepare('SELECT * FROM diagnostics').get();assert.equal(row.id,id);assert.equal(row.route,'browser/chat');assert.equal(row.method,'BROWSER');assert.equal(row.status,0);assert.equal(row.category,'browser_exception');assert.equal(row.release,env.TELEMETRY_RELEASE);
+ for(const value of ['PRIVATE_MESSAGE','PRIVATE_STACK','private.test','QUERY_SECRET','SECRET',owner.email])assert.equal(JSON.stringify(row).includes(value),false);
+ sql.close();
+});
+test('browser reporting validates role, method, origin and enum values; kill switch stays effective',async()=>{
+ const {sql,env,ctx}=fixture(),id=crypto.randomUUID(),badDB={prepare(){throw Error('must not access storage');}};
+ const request=body=>new Request('https://hub.test/api/diagnostics/browser',{method:'POST',headers:{origin:'https://hub.test','content-type':'application/json'},body:JSON.stringify(body)});
+ assert.equal((await browserDiagnosticsAPI(request({type:'exception',section:'chat'}),{...env,TELEMETRY_ENABLED:'false',DB:badDB},child,{id,ctx})).status,503);
+ for(const user of [null,{...child,role:'owner'},{...child,id:'other'}])assert.equal((await browserDiagnosticsAPI(request({type:'exception',section:'chat'}),{...env,DB:badDB},user,{id,ctx})).status,403);
+ assert.equal((await browserDiagnosticsAPI(request({type:'exception',section:'/private/path'}),env,child,{id,ctx})).status,400);
+ assert.equal((await browserDiagnosticsAPI(request({type:'unknown',section:'chat'}),env,child,{id,ctx})).status,400);
+ assert.equal((await browserDiagnosticsAPI(request({type:'exception',section:'chat',extra:'x'.repeat(600)}),env,child,{id,ctx})).status,400);
+ assert.equal((await browserDiagnosticsAPI(new Request('https://hub.test/api/diagnostics/browser',{method:'POST',headers:{origin:'https://evil.test','content-type':'application/json'},body:'{}'}),env,child,{id,ctx})).status,403);
+ assert.equal(sql.prepare('SELECT count(*) AS n FROM diagnostics').get().n,0);sql.close();
+});
+test('browser diagnostic storage failure never escapes the reporting endpoint',async()=>{
+ const tasks=[],ctx={waitUntil:task=>tasks.push(task)},id=crypto.randomUUID(),env={TELEMETRY_ENABLED:'true',DB:{batch(){throw Error('private storage failure');}}};
+ const request=new Request('https://hub.test/api/diagnostics/browser',{method:'POST',headers:{origin:'https://hub.test','content-type':'application/json'},body:JSON.stringify({type:'rejection',section:'settings'})});
+ const response=await browserDiagnosticsAPI(request,env,child,{id,ctx});await Promise.all(tasks);
+ assert.equal(response.status,202);assert.equal((await response.json()).requestId,id);
+});
+test('diagnostic lookup and browser capture enforce Access identity through the Worker',async()=>{
+ const {sql,env,ctx,drain}=fixture(),id=crypto.randomUUID();await storeDiagnostic(env,{id,created:Date.now(),route:'/api/chat',method:'POST',status:503,duration_ms:1,category:'service_error',release:'unknown'});const browserReferences=[];
  const {privateKey,publicKey}=await generateKeyPair('RS256'),jwk=await exportJWK(publicKey);jwk.kid='synthetic-diagnostic-key';
  const issuer='https://telemetry-tests.cloudflareaccess.com';Object.assign(env,{ACCESS_TEAM_DOMAIN:issuer,ACCESS_AUD:'synthetic-audience'});
  const original=globalThis.fetch;
@@ -79,8 +105,10 @@ test('diagnostic lookup enforces real Access JWT verification and role boundarie
    const token=await new SignJWT({email:user.email}).setProtectedHeader({alg:'RS256',kid:jwk.kid}).setIssuer(issuer).setAudience(env.ACCESS_AUD).setExpirationTime('5m').sign(privateKey);
    const response=await worker.fetch(new Request('https://hub.test/api/diagnostics?id='+id,{headers:{'Cf-Access-Jwt-Assertion':token}}),env,ctx);
    assert.equal(response.status,user.role==='owner'?200:403);assert.ok(response.headers.get('x-request-id'));
+   const browser=await worker.fetch(new Request('https://hub.test/api/diagnostics/browser',{method:'POST',headers:{'Cf-Access-Jwt-Assertion':token,origin:'https://hub.test','content-type':'application/json'},body:JSON.stringify({type:'exception',section:'chat',message:'NEVER_STORED'})}),env,ctx);
+   assert.equal(browser.status,202);const event=await browser.json();assert.equal(event.requestId,browser.headers.get('x-request-id'));browserReferences.push(event.requestId);
   }
   assert.equal((await worker.fetch(new Request('https://hub.test/api/diagnostics?id='+id,{headers:{'Cf-Access-Authenticated-User-Email':owner.email}}),env,ctx)).status,401);
-  await drain();assert.equal(sql.prepare('SELECT count(*) AS n FROM diagnostics').get().n,1);
+  await drain();assert.equal(sql.prepare('SELECT count(*) AS n FROM diagnostics').get().n,3);for(const ref of browserReferences){const row=sql.prepare('SELECT route,category FROM diagnostics WHERE id=?').get(ref);assert.equal(row.route,'browser/chat');assert.equal(row.category,'browser_exception');}
  }finally{globalThis.fetch=original;sql.close();}
 });

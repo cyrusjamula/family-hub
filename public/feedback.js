@@ -1,6 +1,8 @@
 const feedbackEl=id=>document.getElementById(id);
 
 // Upgrade the existing feedback markup without embedding selected files in URLs.
+const feedbackReferenceLabel=document.createElement('label');feedbackReferenceLabel.textContent='Related request reference (optional; copy the UUID shown with a Hub error)';
+const feedbackReference=document.createElement('input');feedbackReference.id='feedback-reference';feedbackReference.maxLength=36;feedbackReference.autocomplete='off';feedbackReference.spellcheck=false;feedbackReferenceLabel.append(feedbackReference);feedbackEl('feedback-review').before(feedbackReferenceLabel);
 const oldFeedbackImage=feedbackEl('feedback-local-image');
 const feedbackCanvas=document.createElement('canvas');feedbackCanvas.id='feedback-local-image';feedbackCanvas.hidden=true;
 feedbackCanvas.setAttribute('role','img');feedbackCanvas.setAttribute('aria-label','Selected screenshot preview');oldFeedbackImage.replaceWith(feedbackCanvas);
@@ -43,7 +45,7 @@ async function prepareFeedback(){
  clearFeedbackPreview();const version=feedbackVersion;
  const title=feedbackEl('feedback-title').value.trim(),details=feedbackEl('feedback-details').value.trim();
  if(!title||title.length>120||!details||details.length>3000)throw Error('Enter a short title and feedback details');
- const includeContext=feedbackEl('feedback-context').checked,includeName=feedbackEl('feedback-name').checked,confirmScreenshot=feedbackEl('feedback-image-consent').checked;
+ const includeContext=feedbackEl('feedback-context').checked,includeName=feedbackEl('feedback-name').checked,confirmScreenshot=feedbackEl('feedback-image-consent').checked,relatedRequestId=feedbackEl('feedback-reference').value.trim();
  const file=feedbackEl('feedback-file').files?.[0];let screenshot;
  if(file){
   if(!confirmScreenshot)throw Error('Allow the selected screenshot first');
@@ -53,8 +55,8 @@ async function prepareFeedback(){
   screenshot={type:file.type,data:btoa(binary)};
  }
  if(version!==feedbackVersion)return;
- feedbackDraft={id:feedbackId,title,details,includeContext,context:includeContext?feedbackContext:'unspecified',includeName,confirmScreenshot,screenshot,confirmPrivateFeedback:true};
- feedbackEl('feedback-review-text').textContent=[title,details,'Private reporter: '+feedbackMe.name,'Public name: '+(includeName?feedbackMe.name:'not included'),'Context: '+(includeContext?feedbackContext:'not included'),'Screenshot: '+(screenshot?'private attachment, visible to you and Cyrus':'none')].join('\n\n');
+ feedbackDraft={id:feedbackId,title,details,includeContext,context:includeContext?feedbackContext:'unspecified',includeName,relatedRequestId,confirmScreenshot,screenshot,confirmPrivateFeedback:true};
+ feedbackEl('feedback-review-text').textContent=[title,details,'Private reporter: '+feedbackMe.name,'Public name: '+(includeName?feedbackMe.name:'not included'),'Context: '+(includeContext?feedbackContext:'not included'),'Related request reference: '+(relatedRequestId||'not included'),'Screenshot: '+(screenshot?'private attachment, visible to you and Cyrus':'none')].join('\n\n');
  if(screenshot){
   if(typeof createImageBitmap!=='function')throw Error('Screenshot preview is not supported here. Submit without the attachment.');
   const bitmap=await createImageBitmap(file);
@@ -74,7 +76,7 @@ async function listFeedback(){
 async function showFeedbackReport(id){
  const row=await feedbackRequest('/report?id='+encodeURIComponent(id));feedbackSelected=row;clearPublicPreview();
  feedbackEl('feedback-triage').open=true;feedbackEl('feedback-report').hidden=false;feedbackEl('feedback-report-title').textContent=row.title;
- const details=feedbackEl('feedback-report-details');details.textContent=[row.reporter+' · '+row.state,row.details,'Context: '+row.context,'Public first-name permission: '+(row.includeName?'yes':'no')].join('\n\n');
+ const details=feedbackEl('feedback-report-details');details.textContent=[row.reporter+' · '+row.state,row.details,'Context: '+row.context,'Related request reference: '+(row.relatedRequestId||'none'),'Hub release: '+(row.release||'unknown'),'Public first-name permission: '+(row.includeName?'yes':'no')].join('\n\n');
  if(typeof row.issueUrl==='string'&&/^https:\/\/github\.com\/cyrusjamula\/family-hub\/issues\/[1-9]\d*$/.test(row.issueUrl)){const a=document.createElement('a');a.href=row.issueUrl;a.textContent='Open GitHub issue';a.target='_blank';a.rel='noopener noreferrer';details.append(document.createTextNode('\n'),a);}
  feedbackEl('feedback-report-image').hidden=!row.hasScreenshot;feedbackEl('feedback-report-image').removeAttribute('src');
  if(row.hasScreenshot)feedbackEl('feedback-report-image').src='/api/feedback/image?id='+encodeURIComponent(id);
@@ -91,7 +93,7 @@ feedbackEl('feedback-review').onclick=()=>feedbackRun(prepareFeedback);
 feedbackEl('feedback-form').onsubmit=event=>{event.preventDefault();feedbackRun(async()=>{
  if(!feedbackDraft||!feedbackEl('feedback-submit-consent').checked)throw Error('Preview and confirm this report first');
  const result=await feedbackRequest('/submit',feedbackDraft);
- clearFeedbackPreview();feedbackId=crypto.randomUUID();feedbackEl('feedback-title').value='';feedbackEl('feedback-details').value='';feedbackEl('feedback-context').checked=false;feedbackEl('feedback-name').checked=false;feedbackEl('feedback-image-consent').checked=false;feedbackEl('feedback-file').value='';feedbackEl('feedback-file').disabled=true;
+ clearFeedbackPreview();feedbackId=crypto.randomUUID();feedbackEl('feedback-title').value='';feedbackEl('feedback-details').value='';feedbackEl('feedback-reference').value='';feedbackEl('feedback-context').checked=false;feedbackEl('feedback-name').checked=false;feedbackEl('feedback-image-consent').checked=false;feedbackEl('feedback-file').value='';feedbackEl('feedback-file').disabled=true;
  feedbackEl('feedback-status').textContent='Report saved privately for Cyrus. No GitHub issue has been published yet.';await listFeedback();await showFeedbackReport(result.id);
 });};
 function resetFeedbackQueue(){feedbackCursor=null;feedbackCursorHistory=[];return listFeedback();}

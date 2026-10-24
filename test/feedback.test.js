@@ -14,7 +14,7 @@ const draft=()=>({id:crypto.randomUUID(),title:'Synthetic feedback',details:'Onl
 function fixture(){
  const sql=new DatabaseSync(':memory:');for(const name of readdirSync(new URL('../migrations/',import.meta.url)).sort())sql.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
  const DB={prepare(query){const bound=(args=[])=>({first:async()=>sql.prepare(query).get(...args)??null,all:async()=>({results:sql.prepare(query).all(...args)}),run:async()=>sql.prepare(query).run(...args)});return {...bound(),bind:(...args)=>bound(args)};}};
- const env={DB,FEEDBACK_ENABLED:'true',GOOGLE_VAULT_KEY:btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))),GITHUB_FEEDBACK_TOKEN:'synthetic-never-live'};
+ const env={DB,FEEDBACK_ENABLED:'true',TELEMETRY_RELEASE:'abcdef0123456789',GOOGLE_VAULT_KEY:btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))),GITHUB_FEEDBACK_TOKEN:'synthetic-never-live'};
  return {sql,env,api:(route,body,user=owner,send=()=>{throw Error('No provider call expected');})=>feedbackAPI(req(route,body),env,user,send)};
 }
 test('feedback disabled, unauthenticated, unknown, and cross-origin requests fail before storage/provider',async()=>{
@@ -30,7 +30,7 @@ test('text feedback needs permission and does not collect unselected context, lo
  const result=await api('/submit',body,child);assert.equal(result.status,200);
  const row=sql.prepare('SELECT * FROM feedback').get();assert.equal(row.reporter,child.email);assert.equal(row.reporter_id,child.id);assert.equal(row.screenshot,null);assert.ok(!row.payload.includes(body.details));
  const saved=await open(env,row.payload,'feedback:'+child.email+':'+body.id);
- assert.deepEqual(saved,{title:body.title,details:body.details,context:'unspecified',includeName:false});
+ assert.deepEqual(saved,{title:body.title,details:body.details,context:'unspecified',includeName:false,relatedRequestId:null,release:env.TELEMETRY_RELEASE});
  assert.equal(JSON.stringify(saved).includes('SECRET LOG'),false);sql.close();
 });
 test('screenshots require separate permission, supported type, signature and bounded size',async()=>{
@@ -88,6 +88,16 @@ test('public preview is exact, respects name consent, and excludes private image
  assert.equal(preview.visibility,'public');assert.equal(preview.repository,'cyrusjamula/family-hub');
  const text=JSON.stringify(preview.payload);assert.ok(!text.includes(child.email));assert.ok(!text.includes('Iyanah'));assert.ok(!text.includes(image.data));assert.ok(!text.includes('@someone'));assert.ok(!text.includes('<script>'));assert.match(text,/Restricted report and screenshot/);assert.match(text,/Context: chat/);
  const row=sql.prepare('SELECT * FROM feedback').get();assert.match(issuePayload(row,{includeName:true,context:'settings'},{publicTitle:'T',publicDetails:'D'}).body,/Reporter: Iyanah/);sql.close();
+});
+test('feedback links only a valid optional reference and release in encrypted private data and reviewed issue text',async()=>{
+ const {sql,api,env}=fixture(),reference=crypto.randomUUID(),body={...draft(),relatedRequestId:reference};
+ assert.equal((await api('/submit',{...body,relatedRequestId:'PRIVATE_TOKEN'} ,child)).status,400);
+ assert.equal((await api('/submit',body,child)).status,200);
+ const privateReport=await (await api('/report?id='+body.id,undefined,child)).json();
+ assert.equal(privateReport.relatedRequestId,reference);assert.equal(privateReport.release,env.TELEMETRY_RELEASE);
+ const review={id:body.id,publicTitle:'Sanitized title',publicDetails:'Sanitized details'},preview=await (await api('/preview',review)).json();
+ assert.match(preview.payload.body,new RegExp(reference));assert.match(preview.payload.body,/Hub release: abcdef0123456789/);
+ assert.equal(preview.payload.body.includes(body.details),false);sql.close();
 });
 test('missing connection, absent approval and changed digest never call GitHub',async()=>{
  const {sql,env,api}=fixture(),body=draft();await api('/submit',body,child);let calls=0;const provider=()=>{calls++;throw Error('must not call');};
