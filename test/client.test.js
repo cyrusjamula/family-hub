@@ -99,3 +99,10 @@ test('ordinary service failure preserves a private draft for the same session',a
  c.setIntercept(r=>r.path==='/api/messages'?Response.json({error:'Temporarily unavailable'},{status:503}):null);
  await assert.rejects(c.hooks.refresh());assert.equal(c.elements.content.value,'Retry draft fixture');assert.match(c.elements.messages.textContent,/Parents current/);
 });
+
+test('coordinator task drafts use the matching room, preserve prior drafts and never auto-send',async()=>{
+ const c=await client();c.draft('Family draft');await c.listeners['task-compose']({detail:{room:'parents',content:'Reviewed synthetic task handoff'}});assert.equal(c.hooks.getRoom(),'parents');assert.equal(c.elements.content.value,'Reviewed synthetic task handoff');assert.equal(c.requests.some(r=>r.path==='/api/chat'),false);await c.switchRoom('family');assert.equal(c.elements.content.value,'Family draft');await c.listeners['task-compose']({detail:{room:'family',content:'Must not overwrite'}});assert.equal(c.elements.content.value,'Family draft');
+});
+test('failed coordinator-room switch leaves the existing audience and draft intact',async()=>{
+ const c=await client();c.draft('Keep Family draft');c.setIntercept(r=>{if(r.room==='parents')throw Error('offline');});await c.listeners['task-compose']({detail:{room:'parents',content:'Private task'}});assert.equal(c.hooks.getRoom(),'family');assert.equal(c.elements.content.value,'Keep Family draft');assert.equal(c.requests.some(r=>r.path==='/api/chat'),false);
+});
