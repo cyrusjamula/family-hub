@@ -94,3 +94,8 @@ test('a supplied diagnostic UUID is displayed in private review and linked only 
  assert.equal(c.requests.some(r=>r.body),false);c.elements['feedback-submit-consent'].checked=true;c.elements['feedback-form'].onsubmit({preventDefault(){}});await c.settle();
  assert.equal(c.requests.find(r=>r.url.endsWith('/submit')).body.relatedRequestId,reference);
 });
+test('an invalid optional request reference explains the UUID requirement before submission',async()=>{
+ const c=await client();fill(c);c.elements['feedback-reference'].value='not-a-uuid';
+ await assert.rejects(c.hooks.prepareFeedback(),/Enter a valid request reference UUID or leave it blank/);
+ assert.equal(c.hooks.getDraft(),null);assert.equal(c.requests.some(r=>r.body),false);
+});

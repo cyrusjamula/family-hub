@@ -23,7 +23,8 @@ export function validateScreenshot(value,consent){
 }
 export function validateFeedback(body,user){
  const relatedRequestId=body.relatedRequestId===undefined||body.relatedRequestId===''?null:body.relatedRequestId;
- if(!uuid.test(body.id)||!safeText(body.title,120)||!safeText(body.details,3000)||body.confirmPrivateFeedback!==true||relatedRequestId!==null&&(typeof relatedRequestId!=='string'||!uuid.test(relatedRequestId)))throw Error('Enter a title, details and permission to submit');
+ if(!uuid.test(body.id)||!safeText(body.title,120)||!safeText(body.details,3000)||body.confirmPrivateFeedback!==true)throw Error('Enter a title, details and permission to submit');
+ if(relatedRequestId!==null&&(typeof relatedRequestId!=='string'||!uuid.test(relatedRequestId)))throw Error('Enter a valid request reference UUID or leave it blank');
  const context=body.includeContext===true?body.context:'unspecified';
  if(!contexts.includes(context)||context==='advanced'&&user.role!=='owner')throw Error('Invalid feedback context');
  return {title:body.title.trim(),details:body.details.trim(),context,includeName:body.includeName===true,relatedRequestId,screenshot:validateScreenshot(body.screenshot,body.confirmScreenshot)};

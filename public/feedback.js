@@ -1,4 +1,5 @@
 const feedbackEl=id=>document.getElementById(id);
+const feedbackReferenceUUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 
 // Upgrade the existing feedback markup without embedding selected files in URLs.
 const feedbackReferenceLabel=document.createElement('label');feedbackReferenceLabel.textContent='Related request reference (optional; copy the UUID shown with a Hub error)';
@@ -46,6 +47,7 @@ async function prepareFeedback(){
  const title=feedbackEl('feedback-title').value.trim(),details=feedbackEl('feedback-details').value.trim();
  if(!title||title.length>120||!details||details.length>3000)throw Error('Enter a short title and feedback details');
  const includeContext=feedbackEl('feedback-context').checked,includeName=feedbackEl('feedback-name').checked,confirmScreenshot=feedbackEl('feedback-image-consent').checked,relatedRequestId=feedbackEl('feedback-reference').value.trim();
+ if(relatedRequestId&&!feedbackReferenceUUID.test(relatedRequestId))throw Error('Enter a valid request reference UUID or leave it blank');
  const file=feedbackEl('feedback-file').files?.[0];let screenshot;
  if(file){
   if(!confirmScreenshot)throw Error('Allow the selected screenshot first');

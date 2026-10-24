@@ -15,6 +15,11 @@ consent.addEventListener('change',()=>{
  try{localStorage.setItem(preference,String(consent.checked));}catch{}
  status.textContent=consent.checked?'Minimal browser error reporting is enabled on this device.':'Browser error reporting is off.';
 });
+window.addEventListener('storage',event=>{
+ if(event.key!==preference&&event.key!==null)return;
+ consent.checked=event.key===preference&&event.newValue==='true';
+ status.textContent=consent.checked?'Minimal browser error reporting is enabled on this device.':'Browser error reporting is off.';
+});
 async function report(type){
  if(!consent.checked||sent>=5)return;
  sent++;

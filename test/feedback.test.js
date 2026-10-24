@@ -91,7 +91,8 @@ test('public preview is exact, respects name consent, and excludes private image
 });
 test('feedback links only a valid optional reference and release in encrypted private data and reviewed issue text',async()=>{
  const {sql,api,env}=fixture(),reference=crypto.randomUUID(),body={...draft(),relatedRequestId:reference};
- assert.equal((await api('/submit',{...body,relatedRequestId:'PRIVATE_TOKEN'} ,child)).status,400);
+ const invalid=await api('/submit',{...body,relatedRequestId:'PRIVATE_TOKEN'},child);
+ assert.equal(invalid.status,400);assert.equal((await invalid.json()).error,'Enter a valid request reference UUID or leave it blank');
  assert.equal((await api('/submit',body,child)).status,200);
  const privateReport=await (await api('/report?id='+body.id,undefined,child)).json();
  assert.equal(privateReport.relatedRequestId,reference);assert.equal(privateReport.release,env.TELEMETRY_RELEASE);
