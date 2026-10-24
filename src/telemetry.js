@@ -26,7 +26,7 @@ export async function instrumentRequest(request,env,ctx,serve){
  try{response=await serve();}catch{unhandled=true;response=Response.json({error:'Service unavailable. If you submitted an external action, check its result before trying again.'},{status:503});}
  const result=new Response(response.body,response);result.headers.set('x-request-id',id);result.headers.set('cache-control','no-store');result.headers.set('x-content-type-options','nosniff');
  if(result.status>=400&&result.headers.get('content-type')?.includes('application/json')){
-  try{const data=await result.clone().json();if(typeof data.error==='string'){data.requestId=id;data.error+=' [Reference: '+id+']';const revised=Response.json(data,{status:result.status,headers:result.headers});revised.headers.delete('content-length');response=revised;}else response=result;}catch{response=result;}
+  try{const data=await result.clone().json();if(data&&typeof data==='object'&&!Array.isArray(data)){const enriched={...data,requestId:id,error:(typeof data.error==='string'?data.error:'Request failed. Check the operation result before retrying.')+' [Reference: '+id+']'};const revised=Response.json(enriched,{status:result.status,headers:result.headers});revised.headers.delete('content-length');response=revised;}else response=result;}catch{response=result;}
  }else response=result;
  // No diagnostics payloads, unauthenticated traffic, successful request sampling,
  // request bodies, headers, exception messages or identities enter persistent logs.

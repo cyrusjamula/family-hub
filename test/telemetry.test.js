@@ -24,6 +24,10 @@ test('unknown paths, methods and malformed release values never become raw telem
  const event=diagnosticMetadata(new Request('https://hub.test/private/SYNTHETIC_RECORD_ID?email=PRIVATE_EMAIL',{method:'PATCH'}),{TELEMETRY_RELEASE:'SYNTHETIC_SECRET'},{id:crypto.randomUUID(),status:400,duration:-4});
  assert.equal(event.route,'/other');assert.equal(event.method,'OTHER');assert.equal(event.release,'unknown');assert.equal(event.duration_ms,0);assert.equal(JSON.stringify(event).includes('SYNTHETIC_RECORD_ID'),false);
 });
+test('structured provider failures without error strings show the reference and preserve result fields',async()=>{
+ const {sql,env,ctx,drain}=fixture();const response=await instrumentRequest(new Request('https://hub.test/api/push/test'),env,ctx,async()=>Response.json({accepted:false,status:401},{status:502}));
+ const body=await response.json(),id=response.headers.get('x-request-id');assert.equal(response.status,502);assert.equal(body.accepted,false);assert.equal(body.status,401);assert.equal(body.requestId,id);assert.match(body.error,/Request failed/);assert.ok(body.error.includes(id));await drain();sql.close();
+});
 test('telemetry failures never change successful or uncertain operation outcomes or retry providers',async()=>{
  let calls=0;const tasks=[];const ctx={waitUntil:p=>tasks.push(p)},env={TELEMETRY_ENABLED:'true',DB:{batch(){throw Error('private database details');}}};
  for(const status of [200,502]){const response=await instrumentRequest(new Request('https://hub.test/api/actions/execute'),env,ctx,async()=>{calls++;return Response.json({state:status===200?'executed':'uncertain',...(status===502?{error:'Check provider before retrying'}:{})},{status});});assert.equal(response.status,status);assert.equal((await response.json()).state,status===200?'executed':'uncertain');}
