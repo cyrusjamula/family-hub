@@ -6,9 +6,9 @@ Use the scoped issue template to describe scope, acceptance checks, regression t
 
 `node scripts/factory-plan.mjs trusted-snapshot.json` reads that snapshot and prints a proposal. The module exposes `issueScopeDigest(issue)` so a trusted collector can show the owner the exact SHA-256 of repository, issue number, title and body. A matching owner comment `/factory approve DIGEST` is valid for seven days; edits invalidate it. The `agent-ready` label indicates readiness only. The planner never posts approvals or comments itself.
 
-The snapshot contains `repository`, an `issues` array with number/title/body/state/labels/comments (comment author login, body and created_at), and an explicit `active` array with issue/files/state for running work. Missing/ambiguous scopes fail closed. Closed or missing dependencies are distinguished; only closed dependencies satisfy the gate.
+The snapshot contains `repository`, an `issues` array with number/title/body/state/labels/comments (comment author login, body and created_at), and an explicit `active` array with issue/files/state for running work. Missing/ambiguous scopes fail closed. Readiness parsing accepts CRLF while approval hashes retain the exact original body. Every required section must occur exactly once. Dot/root segments, repeated separators and noncanonical active-run paths are rejected; a trailing directory slash is canonicalized before protection/conflict checks. Closed or missing dependencies are distinguished; only closed dependencies satisfy the gate.
 
-At most two independent candidates fit alongside active work. Overlapping file/directory scopes serialize. Authorization, deployment, migrations and factory configuration are protected and require separate human handling. One branch/PR per issue prevents batching unrelated code changes into a single unreviewable change.
+At most two independent candidates fit alongside active work. Overlapping file/directory scopes serialize. Authorization and owner-bound provider/action/reminder/push/private-record/quota modules, deployment, migrations and factory configuration are protected and require separate human handling. One branch/PR per issue prevents batching unrelated code changes into a single unreviewable change.
 
 ## Still required before execution
 
