@@ -72,5 +72,5 @@ export default {async scheduled(_event,env,ctx){ctx.waitUntil((async()=>{await d
  try{
  const response=new URL(request.url).pathname.startsWith('/api/')?await api(request,env,user):(env.ASSETS?await env.ASSETS.fetch(request):asset(request));
  const secured=new Response(response.body,response);secured.headers.set('cache-control','no-store');secured.headers.set('x-content-type-options','nosniff');secured.headers.set('referrer-policy','no-referrer');secured.headers.set('content-security-policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");return secured;
- }catch{return json({error:'Service unavailable. No external action was executed.'},503);}
+ }catch{return json({error:'Service unavailable. If you submitted an external action, its result may be uncertain; check Google before creating another action.'},503);}
 }};

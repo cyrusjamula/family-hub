@@ -1,4 +1,4 @@
-import {googleRoleAllowed,accessToken,connectionScopes,base64} from './google.js';
+import {googleRoleAllowed,googleEnabled,accessToken,connectionScopes,base64} from './google.js';
 import {members} from './policy.js';
 export const FAMILY_CALENDAR='family07651998613531102346@group.calendar.google.com';
 const json=(v,s=200)=>new Response(JSON.stringify(v),{status:s,headers:{'content-type':'application/json','cache-control':'no-store'}});
@@ -44,6 +44,7 @@ export async function actionAPI(request,env,user,executor=executeGoogleAction){
   const id=crypto.randomUUID(),hash=await digest(payload);await env.DB.prepare('INSERT INTO actions(id,owner,kind,room,payload,digest,expires) VALUES(?,?,?,?,?,?,?)').bind(id,user.email,body.kind,'parents',JSON.stringify(payload),hash,Date.now()+86400000).run();return json({id,digest:hash,state:'pending'});
  }
  if(url.pathname!=='/api/actions/execute')return json({error:'Not found'},404);
+ if(!googleEnabled(env))return json({error:'Google actions are disabled or not configured. No action was attempted.'},503);
  if(body.confirmExactAction!==true)return json({error:'Review and confirm the exact action first'},400);
  const a=await env.DB.prepare('SELECT * FROM actions WHERE id=? AND owner=?').bind(body.id,user.email).first();
  if(!a||a.state!=='pending'||a.expires<Date.now()||a.digest!==body.digest||await digest(JSON.parse(a.payload))!==a.digest)return json({error:'Action expired, changed, already processed, or unavailable'},409);
