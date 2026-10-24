@@ -9,3 +9,6 @@ build/
 *.key
 *.p12
 coverage/
+
+# Capture renderer is copied from the pinned dependency during build.
+/public/vendor/
