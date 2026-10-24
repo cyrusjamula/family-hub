@@ -29,7 +29,7 @@ export function issueWorkScope(issue){
  return {files:[...new Set(files)],dependencies};
 }
 const overlaps=(left,right)=>left.some(a=>right.some(b=>a===b||a.startsWith(b.endsWith('/')?b:b+'/')||b.startsWith(a.endsWith('/')?a:a+'/')));
-const protectedFiles=['.github','migrations','AGENTS.md','wrangler.jsonc','src/policy.js','src/google.js','src/worker.js','src/actions.js','src/push.js','src/reminders.js','src/private-ai.js','src/feedback.js','src/quota.js','scripts/deploy.mjs','scripts/ci.mjs','scripts/factory-plan.mjs','scripts/factory-collect.mjs'];
+const protectedFiles=['.github','migrations','AGENTS.md','wrangler.jsonc','src/policy.js','src/google.js','src/vault.js','src/telemetry.js','src/worker.js','src/actions.js','src/push.js','src/reminders.js','src/private-ai.js','src/feedback.js','src/quota.js','scripts/deploy.mjs','scripts/ci.mjs','scripts/factory-plan.mjs','scripts/factory-collect.mjs'];
 export function planFactory(snapshot,now=Date.now()){
  if(snapshot?.repository!==factoryPolicy.repository||!Array.isArray(snapshot.issues)||!Array.isArray(snapshot.active))throw Error('A trusted repository snapshot and active-work list are required');
  const seen=new Set();for(const issue of snapshot.issues){if(seen.has(issue.number))throw Error('Ambiguous duplicate issue');seen.add(issue.number);}
