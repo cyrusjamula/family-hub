@@ -22,7 +22,7 @@ async function device({permission='default',supported=true,locationError,subscri
  const notification={permission,async requestPermission(){events.push('permission');return notification.permission;}};
  const navigator={geolocation:{getCurrentPosition(ok,fail,options){geoCalls.push(options);if(locationError)fail({code:locationError});else ok({coords:{latitude:12.34567,longitude:-98.76543}});}}};
  const window={location:{reload(){}}};
- if(supported){window.Notification=notification;window.PushManager=class{};navigator.serviceWorker={ready:Promise.resolve(registration),async getRegistration(){return active?registration:null;},async register(path,options){registrations.push({path,options});return registration;}};}
+ if(supported){window.Notification=notification;window.PushManager=class{};navigator.serviceWorker={ready:Promise.resolve(registration),async getRegistration(){return active?registration:null;},async register(path,options){events.push('browser-register');registrations.push({path,options});return registration;}};}
  const fetch=async(path,options={})=>{
   const req={path,body:options.body?JSON.parse(options.body):undefined};requests.push(req);const route=path.split('?')[0];
   if(route==='/api/me')return Response.json({id:'iyanah',name:'Synthetic child',role:'child',aiEnabled:true});
@@ -36,8 +36,7 @@ async function device({permission='default',supported=true,locationError,subscri
  return {elements,requests,geoCalls,registrations,events,notification,async click(id){await elements[id].onclick();await settle();},async send(content,attach){elements.content.value=content;elements['attach-location'].checked=attach;elements.compose.onsubmit({preventDefault(){}});await settle();}};
 }
 test('location is never acquired in the background and attaches rounded coordinates only by selection',async()=>{
- const d=await device();assert.equal(d.geoCalls.length,0);await d.click('enable-location');assert.equal(d.geoCalls.length,1);assert.equal(d.geoCalls[0].enableHighAccuracy,false);assert.equal(d.geoCalls[0].timeout,10000);assert.equal(d.geoCalls[0].maximumAge,60000);
- assert.equal(d.requests.some(r=>JSON.stringify(r.body??{}).includes('12.35')),false);
+ const d=await device();assert.equal(d.geoCalls.length,0);const beforeLocation=d.requests.length;await d.click('enable-location');assert.equal(d.requests.length,beforeLocation);assert.equal(d.geoCalls.length,1);assert.equal(d.geoCalls[0].enableHighAccuracy,false);assert.equal(d.geoCalls[0].timeout,10000);assert.equal(d.geoCalls[0].maximumAge,60000);
  await d.send('No location selected',false);assert.equal(d.requests.findLast(r=>r.path.startsWith('/api/chat')).body.content,'No location selected');
  await d.send('Selected this time',true);const text=d.requests.findLast(r=>r.path.startsWith('/api/chat')).body.content;assert.match(text,/12\.35, -98\.77/);assert.doesNotMatch(text,/12\.34567|98\.76543/);assert.equal(d.elements['attach-location'].checked,false);
  await d.send('Next message',false);assert.equal(d.requests.findLast(r=>r.path.startsWith('/api/chat')).body.content,'Next message');
@@ -50,10 +49,10 @@ test('unsupported or denied notifications never register a device or send a test
  for(const options of [{supported:false},{permission:'denied'},{permission:'default'}]){const d=await device(options);assert.equal(d.requests.some(r=>r.path.includes('/push/')),false);await d.click('enable-notifications');assert.equal(d.registrations.length,0);assert.equal(d.requests.some(r=>r.path.includes('/push/')),false);await d.click('test-notifications');assert.equal(d.requests.some(r=>r.path.includes('/push/test')),false);}
 });
 test('notification permission precedes registration; test is explicit and disable removes both registrations',async()=>{
- const d=await device({permission:'granted'});assert.equal(d.events.length,0);await d.click('enable-notifications');assert.equal(d.events[0],'permission');assert.equal(d.registrations[0].path,'/sw.js');assert.equal(d.registrations[0].options.scope,'/');
+ const d=await device({permission:'granted'});assert.equal(d.events.length,0);await d.click('enable-notifications');assert.equal(d.events[0],'permission');assert.ok(d.events.includes('browser-register'));assert.ok(d.events.indexOf('permission')<d.events.indexOf('browser-register'));assert.equal(d.registrations[0].path,'/sw.js');assert.equal(d.registrations[0].options.scope,'/');
  const sub=d.requests.find(r=>r.path.includes('/push/subscribe'));assert.equal(sub.body.confirmNotifications,true);assert.deepEqual(Object.keys(sub.body).sort(),['confirmNotifications','endpoint']);assert.equal(d.requests.some(r=>r.path.includes('/push/test')),false);
  await d.click('test-notifications');assert.equal(d.requests.filter(r=>r.path.includes('/push/test')).length,1);assert.match(d.elements['notification-state'].textContent,/accepted/);
- await d.click('disable-notifications');assert.ok(d.events.indexOf('server-disable')<d.events.indexOf('browser-unsubscribe'));assert.match(d.elements['notification-state'].textContent,/off/);
+ await d.click('disable-notifications');assert.ok(d.events.includes('server-disable'));assert.ok(d.events.includes('browser-unsubscribe'));assert.ok(d.events.indexOf('server-disable')<d.events.indexOf('browser-unsubscribe'));assert.match(d.elements['notification-state'].textContent,/off/);
 });
 test('rejected shared-device subscription cannot claim enabled or send an automatic test',async()=>{
  const d=await device({permission:'granted',subscribeError:true});await d.click('enable-notifications');assert.match(d.elements.error.textContent,/previous account/);assert.doesNotMatch(d.elements['notification-state'].textContent,/enabled on this device/);assert.equal(d.requests.some(r=>r.path.includes('/push/test')),false);
