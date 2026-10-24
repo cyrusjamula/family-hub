@@ -5,6 +5,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,readdirSync} from 'node:fs';
 import {feedbackAPI,validateScreenshot,issuePayload} from '../src/feedback.js';
 import {directory,member} from '../src/policy.js';
+import {digest} from '../src/actions.js';
 import {open} from '../src/vault.js';
 import {base64} from '../src/vault.js';
 const owner=member(people.cyrus.email),child=member(people.iyanah.email),adult=member(people.anhaita.email);
@@ -32,6 +33,12 @@ test('text feedback needs permission and does not collect unselected context, lo
  const saved=await open(env,row.payload,'feedback:'+child.email+':'+body.id);
  assert.deepEqual(saved,{title:body.title,details:body.details,context:'unspecified',includeName:false,relatedRequestId:null,release:env.TELEMETRY_RELEASE});
  assert.equal(JSON.stringify(saved).includes('SECRET LOG'),false);sql.close();
+});
+test('identical retry of a report saved before request references existed returns the saved report',async()=>{
+ const {sql,api}=fixture(),body=draft();
+ const legacy={title:body.title,details:body.details,context:'chat',includeName:false,screenshot:null};
+ sql.prepare('INSERT INTO feedback(id,reporter,reporter_id,payload,digest) VALUES(?,?,?,?,?)').run(body.id,child.email,child.id,'legacy',await digest(legacy));
+ const retry=await api('/submit',body,child);assert.equal(retry.status,200);assert.equal((await retry.json()).id,body.id);sql.close();
 });
 test('screenshots require separate permission, supported type, signature and bounded size',async()=>{
  assert.throws(()=>validateScreenshot(image,false));assert.deepEqual(validateScreenshot(image,true),image);

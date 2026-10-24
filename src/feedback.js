@@ -79,7 +79,7 @@ export async function feedbackAPI(request,env,user,send=fetch){
   let body;try{body=await bodyJSON(request);}catch{return json({error:'Invalid or oversized feedback'},400);}
   if(path==='/api/feedback/submit'){
    let report;try{report=validateFeedback(body,user);}catch(error){return json({error:error.message},400);}
-   const hash=await digest(report),existing=await env.DB.prepare('SELECT * FROM feedback WHERE id=?').bind(body.id).first();
+   const {relatedRequestId,...legacy}=report,hash=await digest(relatedRequestId===null?legacy:report),existing=await env.DB.prepare('SELECT * FROM feedback WHERE id=?').bind(body.id).first();
    if(existing)return existing.reporter===user.email&&existing.digest===hash?json({id:existing.id,state:existing.state}):json({error:'Submission ID already used; start a new report'},409);
    const {screenshot,...payload}={...report,release:typeof env.TELEMETRY_RELEASE==='string'&&/^[a-f0-9]{7,40}$/.test(env.TELEMETRY_RELEASE)?env.TELEMETRY_RELEASE:'unknown'};
    const encrypted=await seal(env,payload,'feedback:'+user.email+':'+body.id),image=screenshot?await seal(env,screenshot,'feedback-image:'+user.email+':'+body.id):null;
