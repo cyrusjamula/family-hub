@@ -1,7 +1,21 @@
-const $=id=>document.getElementById(id);let room='family',me,approxLocation=null,drafts={family:'',parents:''},refreshVersion=0,switchingRoom=false,pendingActions=0;
+const $=id=>document.getElementById(id);let room='family',me,approxLocation=null,drafts={family:'',parents:''},refreshVersion=0,switchingRoom=false,pendingActions=0,sessionLocked=false;
 const calendarZone=new Intl.DateTimeFormat('en-US',{timeZone:'America/Los_Angeles',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
 function calendarBoundary(value){if(!/^\d{4}-\d{2}-\d{2}$/.test(value))throw Error('Choose valid start and end dates.');const [year,month,day]=value.split('-').map(Number),target=Date.UTC(year,month-1,day),date=new Date(target);if(date.getUTCFullYear()!==year||date.getUTCMonth()!==month-1||date.getUTCDate()!==day)throw Error('Choose valid start and end dates.');let instant=target;for(let i=0;i<3;i++){const parts=Object.fromEntries(calendarZone.formatToParts(new Date(instant)).filter(p=>p.type!=='literal').map(p=>[p.type,Number(p.value)])),local=Date.UTC(parts.year,parts.month-1,parts.day,parts.hour,parts.minute,parts.second),adjustment=target-local;instant+=adjustment;if(!adjustment)break;}return new Date(instant).toISOString();}
-async function call(path,body,requestRoom=room){const r=await fetch('/api/'+path.split('&')[0]+(path==='me'?'':'?room='+requestRoom+(path.includes('&')?'&'+path.split('&').slice(1).join('&'):'')),{method:body?'POST':'GET',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined});const data=await r.json();if(!r.ok)throw Error(data.error||'Request failed');return data;}
+const sessionNotice='Your sign-in changed or expired. Reload this page to verify your account. If you submitted an external action, check its result before retrying.';
+function lockSession(){
+ if(sessionLocked)return;sessionLocked=true;++refreshVersion;me=undefined;room='family';drafts={family:'',parents:''};approxLocation=null;
+ const panel=document.createElement('main');panel.className='app-shell';const heading=document.createElement('h1');heading.textContent='Verify your sign-in';
+ const notice=document.createElement('p');notice.id='error';notice.textContent=sessionNotice;
+ const reload=document.createElement('button');reload.type='button';reload.textContent='Reload and verify account';reload.onclick=()=>window.location.reload();
+ panel.append(heading,notice,reload);document.body.replaceChildren(panel);
+}
+async function call(path,body,requestRoom=room){
+ if(sessionLocked)throw Error(sessionNotice);
+ const r=await fetch('/api/'+path.split('&')[0]+(path==='me'?'':'?room='+requestRoom+(path.includes('&')?'&'+path.split('&').slice(1).join('&'):'')),{method:body?'POST':'GET',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+ if(sessionLocked)throw Error(sessionNotice);
+ if(r.status===401||r.status===403||r.redirected||r.ok&&r.headers.get('content-type')?.includes('text/html')){lockSession();throw Error(sessionNotice);}
+ const data=await r.json();if(sessionLocked)throw Error(sessionNotice);if(!r.ok)throw Error(data.error||'Request failed');return data;
+}
 function p(text){const el=document.createElement('p');el.textContent=text;return el;}
 async function loadRoom(targetRoom){
  const [messages,approvals,briefs,notices]=await Promise.all(['messages','approvals','briefs','notifications'].map(path=>call(path,undefined,targetRoom)));
@@ -11,7 +25,7 @@ function renderRoom({messages,approvals,briefs,notices}){$('briefs').replaceChil
 async function refresh(){
  if(switchingRoom)return false;
  const targetRoom=room,version=++refreshVersion;
- let snapshot;try{snapshot=await loadRoom(targetRoom);}catch(error){if(version!==refreshVersion||targetRoom!==room)return false;throw error;}
+ let snapshot;try{snapshot=await loadRoom(targetRoom);}catch(error){if(sessionLocked)throw error;if(version!==refreshVersion||targetRoom!==room)return false;throw error;}
  if(version!==refreshVersion||targetRoom!==room||switchingRoom)return false;
  renderRoom(snapshot);return true;
 }
@@ -67,3 +81,5 @@ document.addEventListener('visibilitychange',()=>{if(me&&!pendingActions&&!switc
 
 async function deviceAct(id,fn){$(id).disabled=true;$('error').textContent='';try{await fn();}catch(e){$('error').textContent=e.message;}finally{$(id).disabled=false;}}
 
+
+const accessCheckLink=document.createElement('a');accessCheckLink.href='/access-check.html';accessCheckLink.textContent='Check my access';$('view-settings').append(accessCheckLink);
