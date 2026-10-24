@@ -1,3 +1,4 @@
+import {feedbackAPI} from './feedback.js';
 import {pushAPI,publishNotices} from './push.js';
 import {privateAI} from './private-ai.js';
 import {reserveAI} from './quota.js';
@@ -20,7 +21,7 @@ export async function authenticate(request,env){
  if(!user)throw new Error('This account is not a family member');
  return user;
 }
-const auditedRoutes=new Set(['/api/chat','/api/propose','/api/approve','/api/actions/propose','/api/actions/execute','/api/reminders','/api/reminders/cancel','/api/push/subscribe','/api/push/disable','/api/push/test','/api/private-ai','/api/google/connect','/api/google/disconnect','/api/google/import','/api/google/callback']);
+const auditedRoutes=new Set(['/api/feedback/submit','/api/feedback/preview','/api/feedback/publish','/api/feedback/reject','/api/chat','/api/propose','/api/approve','/api/actions/propose','/api/actions/execute','/api/reminders','/api/reminders/cancel','/api/push/subscribe','/api/push/disable','/api/push/test','/api/private-ai','/api/google/connect','/api/google/disconnect','/api/google/import','/api/google/callback']);
 export async function auditIdentity(request,env,user){
  const url=new URL(request.url);
  if(!auditedRoutes.has(url.pathname)||!(request.method==='POST'||url.pathname==='/api/google/callback'&&request.method==='GET'))return;
@@ -31,6 +32,7 @@ export async function auditIdentity(request,env,user){
 }
 export async function api(request,env,user){
  const url=new URL(request.url), path=url.pathname;
+ if(path==='/api/feedback'||path.startsWith('/api/feedback/'))return feedbackAPI(request,env,user);
  if(path.startsWith('/api/push/'))return pushAPI(request,env,user);
  if(path==='/api/private-ai')return privateAI(request,env,user);
  if(path.startsWith('/api/reminders'))return reminderAPI(request,env,user);
@@ -81,6 +83,6 @@ export default {async scheduled(_event,env,ctx){ctx.waitUntil((async()=>{await d
  try{
  await auditIdentity(request,env,user);
  const response=new URL(request.url).pathname.startsWith('/api/')?await api(request,env,user):(env.ASSETS?await env.ASSETS.fetch(request):asset(request));
- const secured=new Response(response.body,response);secured.headers.set('cache-control','no-store');secured.headers.set('x-content-type-options','nosniff');secured.headers.set('referrer-policy','no-referrer');secured.headers.set('content-security-policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");return secured;
+ const secured=new Response(response.body,response);secured.headers.set('cache-control','no-store');secured.headers.set('x-content-type-options','nosniff');secured.headers.set('referrer-policy','no-referrer');secured.headers.set('content-security-policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");return secured;
  }catch{return json({error:'Service unavailable. If you submitted an external action, its result may be uncertain; check Google before creating another action.'},503);}
 }};
