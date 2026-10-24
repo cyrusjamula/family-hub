@@ -1,3 +1,4 @@
+import {releaseFor} from '../src/release.js';
 import {people} from '../src/policy.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,7 +32,7 @@ test('text feedback needs permission and does not collect unselected context, lo
  const result=await api('/submit',body,child);assert.equal(result.status,200);
  const row=sql.prepare('SELECT * FROM feedback').get();assert.equal(row.reporter,child.email);assert.equal(row.reporter_id,child.id);assert.equal(row.screenshot,null);assert.ok(!row.payload.includes(body.details));
  const saved=await open(env,row.payload,'feedback:'+child.email+':'+body.id);
- assert.deepEqual(saved,{title:body.title,details:body.details,context:'unspecified',includeName:false,relatedRequestId:null,release:env.TELEMETRY_RELEASE});
+ assert.deepEqual(saved,{title:body.title,details:body.details,context:'unspecified',includeName:false,relatedRequestId:null,release:releaseFor(env)});
  assert.equal(JSON.stringify(saved).includes('SECRET LOG'),false);sql.close();
 });
 test('identical retry of a report saved before request references existed returns the saved report',async()=>{
@@ -102,9 +103,9 @@ test('feedback links only a valid optional reference and release in encrypted pr
  assert.equal(invalid.status,400);assert.equal((await invalid.json()).error,'Enter a valid request reference UUID or leave it blank');
  assert.equal((await api('/submit',body,child)).status,200);
  const privateReport=await (await api('/report?id='+body.id,undefined,child)).json();
- assert.equal(privateReport.relatedRequestId,reference);assert.equal(privateReport.release,env.TELEMETRY_RELEASE);
+ assert.equal(privateReport.relatedRequestId,reference);assert.equal(privateReport.release,releaseFor(env));
  const review={id:body.id,publicTitle:'Sanitized title',publicDetails:'Sanitized details'},preview=await (await api('/preview',review)).json();
- assert.match(preview.payload.body,new RegExp(reference));assert.match(preview.payload.body,/Hub release: abcdef0123456789/);
+ assert.match(preview.payload.body,new RegExp(reference));assert.ok(preview.payload.body.includes('Hub release: '+releaseFor(env)));
  assert.equal(preview.payload.body.includes(body.details),false);sql.close();
 });
 test('missing connection, absent approval and changed digest never call GitHub',async()=>{

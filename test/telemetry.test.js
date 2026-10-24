@@ -1,3 +1,4 @@
+import {releaseFor} from '../src/release.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
@@ -17,12 +18,12 @@ const request=()=>new Request('https://hub.test/api/google/callback?code=SYNTHET
 test('server references ignore client headers and sanitized error records omit query, headers, identity and content',async()=>{
  const {sql,env,ctx,drain}=fixture();const response=await instrumentRequest(request(),env,ctx,async()=>Response.json({error:'Safe failure'},{status:502}));await drain();
  const body=await response.json(),id=response.headers.get('x-request-id');assert.match(id,/^[a-f0-9-]{36}$/);assert.notEqual(id,'client-controlled');assert.equal(body.requestId,id);assert.match(body.error,new RegExp(id));
- const row=sql.prepare('SELECT * FROM diagnostics').get();assert.equal(row.id,id);assert.equal(row.route,'/api/google/callback');assert.equal(row.status,502);assert.equal(row.release,env.TELEMETRY_RELEASE);
+ const row=sql.prepare('SELECT * FROM diagnostics').get();assert.equal(row.id,id);assert.equal(row.route,'/api/google/callback');assert.equal(row.status,502);assert.equal(row.release,releaseFor(env));
  for(const value of ['SYNTHETIC_SECRET','PRIVATE_STATE','SYNTHETIC_TOKEN','127.0.0.1','client-controlled',owner.email])assert.equal(JSON.stringify(row).includes(value),false);sql.close();
 });
 test('unknown paths, methods and malformed release values never become raw telemetry',()=>{
  const event=diagnosticMetadata(new Request('https://hub.test/private/SYNTHETIC_RECORD_ID?email=PRIVATE_EMAIL',{method:'PATCH'}),{TELEMETRY_RELEASE:'SYNTHETIC_SECRET'},{id:crypto.randomUUID(),status:400,duration:-4});
- assert.equal(event.route,'/other');assert.equal(event.method,'OTHER');assert.equal(event.release,'unknown');assert.equal(event.duration_ms,0);assert.equal(JSON.stringify(event).includes('SYNTHETIC_RECORD_ID'),false);
+ assert.equal(event.route,'/other');assert.equal(event.method,'OTHER');assert.equal(event.release,releaseFor({TELEMETRY_RELEASE:'SYNTHETIC_SECRET'}));assert.equal(event.duration_ms,0);assert.equal(JSON.stringify(event).includes('SYNTHETIC_RECORD_ID'),false);
 });
 test('structured provider failures without error strings show the reference and preserve result fields',async()=>{
  const {sql,env,ctx,drain}=fixture();const response=await instrumentRequest(new Request('https://hub.test/api/push/test'),env,ctx,async()=>Response.json({accepted:false,status:401},{status:502}));
@@ -73,7 +74,7 @@ test('opted-in browser events accept only fixed fields and receive server refere
  const request=new Request('https://hub.test/api/diagnostics/browser?private=QUERY_SECRET',{method:'POST',headers:{origin:'https://hub.test','content-type':'application/json'},body:JSON.stringify({type:'exception',section:'chat',message:'PRIVATE_MESSAGE',stack:'PRIVATE_STACK',url:'https://private.test/?token=SECRET',email:owner.email})});
  const response=await browserDiagnosticsAPI(request,env,child,{id,ctx});await drain();
  assert.equal(response.status,202);assert.equal((await response.json()).requestId,id);
- const row=sql.prepare('SELECT * FROM diagnostics').get();assert.equal(row.id,id);assert.equal(row.route,'browser/chat');assert.equal(row.method,'BROWSER');assert.equal(row.status,0);assert.equal(row.category,'browser_exception');assert.equal(row.release,env.TELEMETRY_RELEASE);
+ const row=sql.prepare('SELECT * FROM diagnostics').get();assert.equal(row.id,id);assert.equal(row.route,'browser/chat');assert.equal(row.method,'BROWSER');assert.equal(row.status,0);assert.equal(row.category,'browser_exception');assert.equal(row.release,releaseFor(env));
  for(const value of ['PRIVATE_MESSAGE','PRIVATE_STACK','private.test','QUERY_SECRET','SECRET',owner.email])assert.equal(JSON.stringify(row).includes(value),false);
  sql.close();
 });
