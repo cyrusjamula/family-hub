@@ -1,3 +1,4 @@
+import {releaseFor} from './release.js';
 import {seal,open} from './vault.js';
 import {member} from './policy.js';
 import {digest} from './actions.js';
@@ -81,7 +82,7 @@ export async function feedbackAPI(request,env,user,send=fetch){
    let report;try{report=validateFeedback(body,user);}catch(error){return json({error:error.message},400);}
    const {relatedRequestId,...legacy}=report,hash=await digest(relatedRequestId===null?legacy:report),existing=await env.DB.prepare('SELECT * FROM feedback WHERE id=?').bind(body.id).first();
    if(existing)return existing.reporter===user.email&&existing.digest===hash?json({id:existing.id,state:existing.state}):json({error:'Submission ID already used; start a new report'},409);
-   const {screenshot,...payload}={...report,release:typeof env.TELEMETRY_RELEASE==='string'&&/^[a-f0-9]{7,40}$/.test(env.TELEMETRY_RELEASE)?env.TELEMETRY_RELEASE:'unknown'};
+   const {screenshot,...payload}={...report,release:releaseFor(env)};
    const encrypted=await seal(env,payload,'feedback:'+user.email+':'+body.id),image=screenshot?await seal(env,screenshot,'feedback-image:'+user.email+':'+body.id):null;
    // Atomic per-person daily limit; aliases use the same immutable storage owner.
    const saved=await env.DB.prepare("INSERT OR IGNORE INTO feedback(id,reporter,reporter_id,payload,screenshot,digest) SELECT ?,?,?,?,?,? WHERE (SELECT count(*) FROM feedback WHERE reporter=? AND created>=date('now'))<5 RETURNING id").bind(body.id,user.email,user.id,encrypted,image,hash,user.email).first();
