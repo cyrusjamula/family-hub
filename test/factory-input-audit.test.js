@@ -146,3 +146,16 @@ test('secret-named files are denied before reading innocuous contents', async t 
   }
   assert.deepEqual(await auditInputs(root, { files: paths }), { ok: false, filesChecked: 0, findings: { 'disallowed-path': 3 } });
 });
+
+test('repeated recognized keys with invalid scalar suffixes finish in a bounded subprocess', () => {
+  const script = `import assert from 'node:assert/strict';
+    import {inspectText} from './scripts/factory-input-audit.mjs';
+    for (const key of ['api_key=', 'client_secret=', 'account_id=', 'database_id=']) {
+      assert.deepEqual(inspectText(key.repeat(32768)+'!'), []);
+    }
+    assert.ok(inspectText('api_key: '+'a'.repeat(262144)).includes('credential-like-value'));
+    assert.ok(inspectText('database_id: '+'a'.repeat(262144)).includes('infrastructure-identifier'));`;
+  const run = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 3000 });
+  assert.equal(run.error?.code, undefined, 'recognized-key scanning exceeded its bounded execution window');
+  assert.equal(run.status, 0, run.stderr);
+});

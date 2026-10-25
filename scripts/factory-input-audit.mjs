@@ -48,14 +48,37 @@ function inspectEmailReferences(text) {
   return { personal, calendar };
 }
 
+// Plain scalars are parsed only after a recognized key at the start of a
+// line. A value is traversed once, never retried from nested key occurrences.
+function hasPlainAssignment(lines, keyPrefix, minimum, allowedCharacter) {
+  for (const line of lines) {
+    const prefix = keyPrefix.exec(line);
+    if (!prefix) continue;
+    const remainder = line.slice(prefix[0].length);
+    if (remainder.startsWith('"') || remainder.startsWith("'")) continue;
+    const comment = remainder.indexOf('#');
+    const scalar = (comment < 0 ? remainder : remainder.slice(0, comment)).trimEnd();
+    if (scalar.length < minimum) continue;
+    let valid = true;
+    for (const character of scalar) {
+      if (!allowedCharacter.test(character)) { valid = false; break; }
+    }
+    if (valid) return true;
+  }
+  return false;
+}
+
 // Findings are deliberately class-only: never return matching text, snippets or paths.
 export function inspectText(text) {
   const classes = new Set();
+  const lines = text.split(/\r\n|\r|\n/);
+  const plainCredential = hasPlainAssignment(lines, /^[ \t]*(?:"(?:access_token|refresh_token|client_secret|api_key)"|'(?:access_token|refresh_token|client_secret|api_key)'|(?:access_token|refresh_token|client_secret|api_key))[ \t]*[=:][ \t]*/i, 12, /[A-Z0-9_./+=-]/i);
+  const plainInfrastructure = hasPlainAssignment(lines, /^[ \t]*(?:"(?:database_id|account_id|access_app_id)"|'(?:database_id|account_id|access_app_id)'|(?:database_id|account_id|access_app_id))[ \t]*[=:][ \t]*/i, 20, /[A-Z0-9-]/i);
   const emails = inspectEmailReferences(text);
   if (emails.personal) classes.add('personal-email');
   if (/(?:drive\.google\.com\/(?:file\/d|drive\/folders)\/|docs\.google\.com\/(?:document|spreadsheets|presentation|forms)\/d\/)[A-Za-z0-9_-]{10,}/i.test(text) || emails.calendar) classes.add('private-google-reference');
-  if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:github_pat_[A-Za-z0-9_]{15,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{30,})\b|(?:"(?:access_token|refresh_token|client_secret|api_key)"|'(?:access_token|refresh_token|client_secret|api_key)'|\b(?:access_token|refresh_token|client_secret|api_key))\s*[=:]\s*(?:["'][A-Za-z0-9_./+=-]{12,}["']|[A-Za-z0-9_./+=-]{12,}(?=[ \t]*(?:#.*)?$))/im.test(text)) classes.add('credential-like-value');
-  if (/(?:"(?:database_id|account_id|access_app_id)"|'(?:database_id|account_id|access_app_id)'|\b(?:database_id|account_id|access_app_id))\s*[=:]\s*(?:["'][A-Za-z0-9-]{20,}["']|[A-Za-z0-9-]{20,}(?=[ \t]*(?:#.*)?$))/im.test(text)) classes.add('infrastructure-identifier');
+  if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:github_pat_[A-Za-z0-9_]{15,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{30,})\b|(?:"(?:access_token|refresh_token|client_secret|api_key)"|'(?:access_token|refresh_token|client_secret|api_key)'|\b(?:access_token|refresh_token|client_secret|api_key))\s*[=:]\s*["'][A-Za-z0-9_./+=-]{12,}["']/i.test(text) || plainCredential) classes.add('credential-like-value');
+  if (/(?:"(?:database_id|account_id|access_app_id)"|'(?:database_id|account_id|access_app_id)'|\b(?:database_id|account_id|access_app_id))\s*[=:]\s*["'][A-Za-z0-9-]{20,}["']/i.test(text) || plainInfrastructure) classes.add('infrastructure-identifier');
   return [...classes].sort();
 }
 
