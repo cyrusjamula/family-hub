@@ -24,7 +24,7 @@ function permitted(relative) {
   if (typeof relative !== 'string' || !relative || relative.includes('\\') || relative.includes('\0') || path.posix.isAbsolute(relative)) return false;
   const parts = relative.split('/');
   if (parts.some(p => !p || p === '.' || p === '..' || BLOCKED_SEGMENT.test(p))) return false;
-  if (BLOCKED_FILE.test(parts.at(-1))) return false;
+  if (parts.some(part => BLOCKED_FILE.test(part))) return false;
   if (parts.length === 1) return ROOT_FILES.has(relative);
   if (!ALLOWED_ROOTS.has(parts[0]) || !TEXT_EXTENSIONS.has(path.posix.extname(relative))) return false;
   return parts[0] !== '.github' || (parts.length === 3 && parts[1] === 'workflows');

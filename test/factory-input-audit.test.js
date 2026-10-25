@@ -90,3 +90,15 @@ test('quoted JSON credential and infrastructure keys fail the audit and CLI with
   assert.deepEqual(JSON.parse(cli.stdout), result);
   for (const value of [apiKey, databaseId, 'config.json']) assert.equal(cli.stdout.includes(value), false);
 });
+
+test('sensitive names in intermediate directories fail before ordinary content is read', async t => {
+  const root = await fixture(t);
+  const paths = ['src/credentials/config.json', 'src/chat_history/messages.txt', 'docs/private-data/notes.md', 'test/fixtures/tokens/cache.json'];
+  for (const relative of paths) {
+    await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+    await writeFile(path.join(root, relative), 'Ordinary synthetic prose without recognizable identifiers.');
+  }
+  const result = await auditInputs(root, { files: paths });
+  assert.deepEqual(result, { ok: false, filesChecked: 0, findings: { 'disallowed-path': 4 } });
+  assert.equal(JSON.stringify(result).includes('messages'), false);
+});
