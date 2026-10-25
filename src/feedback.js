@@ -1,3 +1,4 @@
+import {releaseFor} from './release.js';
 import {seal,open} from './vault.js';
 import {member} from './policy.js';
 import {digest} from './actions.js';
@@ -22,10 +23,12 @@ export function validateScreenshot(value,consent){
  return {type:value.type,data:value.data};
 }
 export function validateFeedback(body,user){
+ const relatedRequestId=body.relatedRequestId===undefined||body.relatedRequestId===''?null:body.relatedRequestId;
  if(!uuid.test(body.id)||!safeText(body.title,120)||!safeText(body.details,3000)||body.confirmPrivateFeedback!==true)throw Error('Enter a title, details and permission to submit');
+ if(relatedRequestId!==null&&(typeof relatedRequestId!=='string'||!uuid.test(relatedRequestId)))throw Error('Enter a valid request reference UUID or leave it blank');
  const context=body.includeContext===true?body.context:'unspecified';
  if(!contexts.includes(context)||context==='advanced'&&user.role!=='owner')throw Error('Invalid feedback context');
- return {title:body.title.trim(),details:body.details.trim(),context,includeName:body.includeName===true,screenshot:validateScreenshot(body.screenshot,body.confirmScreenshot)};
+ return {title:body.title.trim(),details:body.details.trim(),context,includeName:body.includeName===true,relatedRequestId,screenshot:validateScreenshot(body.screenshot,body.confirmScreenshot)};
 }
 async function bodyJSON(request){
  const reader=request.body?.getReader();if(!reader)throw Error('JSON required');
@@ -38,7 +41,7 @@ function cleanPublicText(value){return value.replaceAll('@','＠').replaceAll('<
 export function issuePayload(row,report,body){
  if(!safeText(body.publicTitle,120)||!safeText(body.publicDetails,3000))throw Error('Review a public title and description');
  const name=report.includeName?member(row.reporter)?.name:'Family member (identity retained privately)';
- return {title:'[Hub feedback] '+cleanPublicText(body.publicTitle.trim()),body:[cleanPublicText(body.publicDetails.trim()),'','Reporter: '+name,'Context: '+report.context,'Reported: '+row.created,'','[Restricted report'+(row.screenshot?' and screenshot':'')+']('+HUB+'#feedback='+row.id+')','The report and any screenshot require Hub sign-in and are visible only to the reporter and owner.','Feedback ID: '+row.id].join('\n')};
+ return {title:'[Hub feedback] '+cleanPublicText(body.publicTitle.trim()),body:[cleanPublicText(body.publicDetails.trim()),'','Reporter: '+name,'Context: '+report.context,'Reported: '+row.created,'','Related request reference: '+(uuid.test(report.relatedRequestId)?report.relatedRequestId:'none'),'Hub release: '+(typeof report.release==='string'&&/^(?:[a-f0-9]{7,40}|unknown)$/.test(report.release)?report.release:'unknown'),'','[Restricted report'+(row.screenshot?' and screenshot':'')+']('+HUB+'#feedback='+row.id+')','The report and any screenshot require Hub sign-in and are visible only to the reporter and owner.','Feedback ID: '+row.id].join('\n')};
 }
 export async function feedbackAPI(request,env,user,send=fetch){
  const known=member(user?.email);if(!known||known.id!==user.id||known.role!==user.role)return json({error:'Verified family identity required'},403);
@@ -77,9 +80,9 @@ export async function feedbackAPI(request,env,user,send=fetch){
   let body;try{body=await bodyJSON(request);}catch{return json({error:'Invalid or oversized feedback'},400);}
   if(path==='/api/feedback/submit'){
    let report;try{report=validateFeedback(body,user);}catch(error){return json({error:error.message},400);}
-   const hash=await digest(report),existing=await env.DB.prepare('SELECT * FROM feedback WHERE id=?').bind(body.id).first();
+   const {relatedRequestId,...legacy}=report,hash=await digest(relatedRequestId===null?legacy:report),existing=await env.DB.prepare('SELECT * FROM feedback WHERE id=?').bind(body.id).first();
    if(existing)return existing.reporter===user.email&&existing.digest===hash?json({id:existing.id,state:existing.state}):json({error:'Submission ID already used; start a new report'},409);
-   const {screenshot,...payload}=report;
+   const {screenshot,...payload}={...report,release:releaseFor(env)};
    const encrypted=await seal(env,payload,'feedback:'+user.email+':'+body.id),image=screenshot?await seal(env,screenshot,'feedback-image:'+user.email+':'+body.id):null;
    // Atomic per-person daily limit; aliases use the same immutable storage owner.
    const saved=await env.DB.prepare("INSERT OR IGNORE INTO feedback(id,reporter,reporter_id,payload,screenshot,digest) SELECT ?,?,?,?,?,? WHERE (SELECT count(*) FROM feedback WHERE reporter=? AND created>=date('now'))<5 RETURNING id").bind(body.id,user.email,user.id,encrypted,image,hash,user.email).first();

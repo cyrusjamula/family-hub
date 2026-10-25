@@ -35,4 +35,14 @@ At implementation time, no production migration, feature flag, GitHub credential
 
 ## Telemetry
 
-Issue #14 separately tracks restricted operational telemetry, correlation IDs and release information. This feature does not claim to have captured diagnostics that are not implemented. Add telemetry through explicit sanitized field allowlists and the existing preview/approval flow; never attach raw logs or shared-room content automatically.
+Issue #14 tracks restricted operational telemetry and correlation IDs. A reporter may optionally add a UUID request reference to the private report; the reference and validated Hub release are stored in its encrypted payload. The owner can review both in triage, and they are included in the exact GitHub preview for explicit approval. No raw logs, browser text, stacks or shared-room content are attached automatically.
+
+## Page preview and save recovery
+
+Selecting Feedback prepares a bounded local rendering of the visible Hub page before showing the dialog. It excludes the feedback dialog, iframes, password fields and file inputs. It uses a pinned, self-hosted html2canvas renderer, not a screenshot service or external CDN. This is a DOM-rendered preview and can differ from the browser's pixels; it does not include browser chrome. Failure or a 2.5-second timeout leaves text reporting and image upload available.
+
+No screenshot is attached by default. Choose Page before feedback opened or Upload an image, inspect the local canvas preview, grant private attachment permission, then review and submit the report. Images remain bounded to 150 KB, encrypted, and readable only by the reporter and owner. New report, close and revoked image permission discard the captured page. Late capture/file work cannot reattach a revoked image. Public issue publication still requires the exact owner-reviewed payload; screenshots remain restricted.
+
+A successful save now shows the report reference even if fetching the list/detail subsequently fails. A transport failure or invalid acknowledgement preserves the same ID and draft for an idempotent retry. Authentication HTML gives sign-in recovery guidance rather than a JSON parsing failure. While feedback is disabled, the dialog explicitly says nothing was saved and disables its normal review/submit controls.
+
+Production setup remains separate: verify migration 0007_feedback.sql and the existing encryption key, then enable FEEDBACK_ENABLED after review. A GitHub publication credential is optional for private saving and must be authorized/configured separately. No credential is provisioned and no issue is published by this code change.
