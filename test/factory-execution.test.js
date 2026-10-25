@@ -132,3 +132,30 @@ test('missing or null external active inventory blocks initial, pre-start and ac
   assert.equal((await c.reconcile(started.run.id)).state,'cancel_pending');assert.equal(active.store.active().length,1);
  }
 });
+test('polling sends bounded cleanup once on pause, revocation and expiry even if inspect fails',async t=>{
+ for(const reason of ['pause','revocation','expiry']){const f=setup(t);f.store.setPaused(false);const started=await f.controller().dispatch(1);
+ if(reason==='pause')f.store.setPaused(true);if(reason==='revocation')f.gates.budget=false;
+ f.adapter.inspect=async()=>{throw Error('offline');};const c=f.controller(reason==='expiry'?{now:()=>timestamp+60001}:{});
+ await c.reconcile(started.run.id);await c.reconcile(started.run.id);assert.equal(f.calls.cancel,1,reason);assert.equal(f.store.get(started.run.id).state,'cancel_pending');}
+});
+test('cancelled uncertain starts get cleanup once when inspection recovers their external identity',async t=>{
+ const f=setup(t);f.store.setPaused(false);f.adapter.start=async()=>{throw Error('response lost');};const c=f.controller(),started=await c.dispatch(1);await c.cancel(started.run.id);assert.equal(f.calls.cancel,0);
+ f.adapter.inspect=async()=>({state:'running',externalId:'recovered-run'});await c.reconcile(started.run.id);await c.reconcile(started.run.id);
+ assert.equal(f.calls.cancel,1);assert.equal(f.store.get(started.run.id).external_id,'recovered-run');
+});
+test('own correlated review PR is excluded from conflicts, including first discovery; unrelated work remains locked',async t=>{
+ for(const previouslyLinked of [false,true]){const f=setup(t);f.store.setPaused(false);const c=f.controller(),started=await c.dispatch(1);
+ const status={state:'review',externalId:'mock-run',prUrl:'https://github.com/cyrusjamula/family-hub/pull/999'};
+ if(previouslyLinked)f.store.reconcile(started.run.id,status);
+ f.adapter.inspect=async()=>status;f.snapshot.active=[{issue:999,relatedIssues:[1],files:['public/synthetic.js'],state:'review'}];
+ assert.equal((await c.reconcile(started.run.id)).state,'review',String(previouslyLinked));assert.equal(f.calls.cancel,0);
+ f.snapshot.active.push({issue:1000,relatedIssues:[],files:['public/synthetic.js'],state:'review'});
+ assert.equal((await c.reconcile(started.run.id)).state,'cancel_pending');assert.equal(f.calls.cancel,1);}
+});
+test('correlated PR scope and immutable identity cannot expand approval',async t=>{
+ const f=setup(t);f.store.setPaused(false);const c=f.controller(),started=await c.dispatch(1);
+ const status={state:'review',externalId:'mock-run',prUrl:'https://github.com/cyrusjamula/family-hub/pull/999'};f.adapter.inspect=async()=>status;
+ await c.reconcile(started.run.id);assert.throws(()=>f.store.reconcile(started.run.id,{...status,prUrl:'https://github.com/cyrusjamula/family-hub/pull/1000'}),/identity/);
+ f.snapshot.active=[{issue:999,relatedIssues:[1],files:['public/unapproved.js'],state:'review'}];
+ assert.equal((await c.reconcile(started.run.id)).state,'cancel_pending');assert.equal(f.calls.cancel,1);
+});

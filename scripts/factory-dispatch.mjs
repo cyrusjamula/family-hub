@@ -15,16 +15,18 @@ export function createSimulationController({store,readSimulationSnapshot,simulat
  if(!Number.isSafeInteger(timeoutMs)||timeoutMs<1||timeoutMs>5000||!Number.isSafeInteger(runtimeMs)||runtimeMs<1||runtimeMs>3600000)throw Error('invalid simulation bounds');
  const gates=()=>{try{const g=readSimulationGates();return prerequisites.every(k=>g?.[k]===true)&&Number.isFinite(g.expiresAt)&&g.expiresAt>now();}catch{return false;}};
  const adapterReady=()=>simulationAdapter?.mode==='simulation'&&['start','inspect','cancel'].every(k=>typeof simulationAdapter[k]==='function');
- function planWithLocalWork(snapshot,localActive,existingIssue){
+ function planWithLocalWork(snapshot,localActive,existingIssue,linkedPr,approvedFiles=[]){
   const checkedAt=now();
   // Validate the original inventory before augmenting it. Missing/null active
   // means external work is unknown, never that there is no external work.
   planFactory(snapshot,checkedAt);
+  const ownEntries=linkedPr===undefined?[]:snapshot.active.filter(entry=>entry.issue===linkedPr);
+  if(ownEntries.length>1||ownEntries.some(entry=>entry.files.some(file=>!approvedFiles.some(scope=>file===scope||file.startsWith(scope+'/')))))throw Error('linked PR scope is ambiguous or exceeds approval');
   // Once claimed, validate this issue independently of new candidate ordering.
   // Closed issues stay available for dependency checks; open dependencies remain
   // unknown/incomplete, and all external/local active locks still apply.
   const issues=existingIssue===undefined?snapshot.issues:snapshot.issues.filter(issue=>issue.number===existingIssue||issue.state==='closed');
-  return planFactory({...snapshot,issues,active:[...snapshot.active,...localActive]},checkedAt);
+  return planFactory({...snapshot,issues,active:[...snapshot.active.filter(entry=>entry.issue!==linkedPr),...localActive]},checkedAt);
  }
 
  async function candidate(number){
@@ -63,20 +65,32 @@ export function createSimulationController({store,readSimulationSnapshot,simulat
    return {run:store.get(id)};
   },
   async reconcile(id){
-   const run=store.get(id);if(!run||!['uncertain','running','review','cancel_pending'].includes(run.state))return run;
-   // Revocation/pause stop new dispatch, and request cleanup of existing work.
+   let run=store.get(id);if(!run||!['uncertain','running','review','cancel_pending'].includes(run.state))return run;
+   if(!adapterReady()){store.requestCancel(id);return store.get(id);}
+   // Learn and durably validate provider/PR identity before correlating external
+   // work. This also recovers uncertain starts. Lookup failure never releases a lock.
+   try{
+    const status=await bounded(()=>simulationAdapter.inspect({operationId:id,externalId:run.external_id}),timeoutMs);
+    store.reconcile(id,status);
+   }catch{}
+   run=store.get(id);if(!['uncertain','running','review','cancel_pending'].includes(run.state))return run;
    let scopeValid=false;
    try{
     const snapshot=await bounded(readSimulationSnapshot,timeoutMs);
-    const plan=planWithLocalWork(snapshot,store.active().filter(r=>r.id!==id).map(r=>({issue:r.issue,files:r.files,state:'running'})),run.issue);
+    // Only the exact PR number from the validated fixed-repository URL is this
+    // run's own external lock. Related issue text alone cannot establish identity.
+    const linkedPr=run.external_id&&run.pr_url?Number(run.pr_url.split('/').at(-1)):undefined;
+    const plan=planWithLocalWork(snapshot,store.active().filter(r=>r.id!==id).map(r=>({issue:r.issue,files:r.files,state:'running'})),run.issue,linkedPr,run.files);
     scopeValid=plan.selected.some(item=>item.issue===run.issue&&item.scopeDigest===run.digest&&!changesControls(item.files));
    }catch{} // An unavailable/malformed snapshot cannot renew approval.
-   if(!scopeValid||!gates()||!adapterReady()||store.paused()||now()>=run.deadline)store.requestCancel(id);
-   if(!adapterReady())return store.get(id);
-   try{
-    const status=await bounded(()=>simulationAdapter.inspect({operationId:id,externalId:run.external_id}),timeoutMs);
-    return store.reconcile(id,status);
-   }catch{return store.get(id);}
+   if(!scopeValid||!gates()||store.paused()||now()>=run.deadline)store.requestCancel(id);
+   // Persist once-only cancellation intent before cleanup, even after lookup
+   // failure. A lost cleanup response is reconciled, never automatically retried.
+   run=store.get(id);
+   if(run.state==='cancel_pending'&&run.external_id&&store.claimCancellation(id)){
+    try{await bounded(()=>simulationAdapter.cancel({operationId:id,externalId:run.external_id}),timeoutMs);}catch{}
+   }
+   return store.get(id);
   },
   async cancel(id){
    const run=store.requestCancel(id);if(!run||run.state!=='cancel_pending'||!adapterReady())return run;

@@ -47,6 +47,7 @@ export class FactoryStore {
   return this.transaction(()=>{
    const run=this.get(id);if(!run||!['uncertain','running','cancel_pending','review'].includes(run.state))return run;
    if(externalId!==undefined){if(typeof externalId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(externalId))throw Error('invalid provider run id');if(run.external_id&&run.external_id!==externalId)throw Error('provider identity changed');}
+   if(prUrl!==undefined&&run.pr_url&&prUrl!==run.pr_url)throw Error('PR identity changed');
    if(prUrl!==undefined&&!/^https:\/\/github\.com\/cyrusjamula\/family-hub\/pull\/[1-9]\d*$/.test(prUrl))throw Error('invalid PR link');
    if(!['running','review','failed','cancelled','not-started','unknown'].includes(state))throw Error('invalid reconciliation state');
    if(state==='unknown'||(run.state==='review'&&state==='running'))return run;
