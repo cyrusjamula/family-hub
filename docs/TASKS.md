@@ -19,7 +19,9 @@ A creator, assignee or owner can update work status. Only the owner can approve/
 | Parent approval review | Owner task approval and separate external-action approval | Keep the existing parent-only approval Form optional |
 | Coordination Board / private queue | Historical/reference workflows | Preserve existing sheets and permissions |
 
-The existing Board and private queue metadata were inventoried, and all three Forms' editor/responder restrictions were reviewed separately. No matching standalone Apps Script project was discovered by the project-name metadata search. Bound-script code and installed triggers have not been verified; absence from a Drive search does not prove they do not exist. No new Forms, polling jobs or triggers are created by this change. Existing Forms are not automatically synchronized with Hub tasks, and the Hub does not claim their submissions were imported or notified. Inspect any existing bound automation before adding a connector or retiring it.
+The existing Board and private queue metadata were inventoried, and all three Forms' editor/responder restrictions were reviewed separately. A Drive search result is not a complete Apps Script inventory. Before installing or retiring automation, inspect the authorized account's Apps Script dashboard, project triggers and recent execution statuses. Review handler code without running it, and distinguish a completed invocation from verified response processing. Keep project IDs, account mappings, private queue contents, trigger exports and family assignments out of public evidence.
+
+Preserve optional legacy private intake while using Hub tasks for daily coordination. Do not add duplicate polling or notification paths. A legacy response must be reviewed before manually creating a Hub task unless an explicit supported synchronization has been implemented and authorized. Inspect deduplication, locks, source access and quarantine behavior before relying on an intake handler. A notification draft is not a sent notification. Record which project/account the private audit covered; other accounts' private triggers remain outside that evidence.
 
 ## Singapore adoption trial
 
@@ -34,3 +36,9 @@ Review the PR and apply only the additive `0009_tasks.sql` migration to the exis
 Regression tests cover persisted provenance/status/approvals, family/private boundaries, forbidden child handoffs, invalid identities, aliases, concurrent decisions and creates, rate limits, manual-only delegation, preserved drafts, room races, authentication denial and save/refresh failure separation. Tests use disposable SQLite and mocked devices/providers.
 
 Retained tasks are paged with an opaque creation-time/ID cursor, including completed tasks. Completion-note drafts stay with their room and task across refreshes until confirmed save or explicit discard. If a create response is lost and the user edits the draft, Recover previous save replays the immutable original with its same ID before assigning a separate ID to the preserved edits; the new draft requires audience review again. A failed initial identity lookup can be retried with Refresh.
+
+## Family acceptance handoff
+
+Each member signs in independently on their own device; never share login codes. In Settings, open Check my access and run the five checks, then verify the displayed person and role. Adults may use Parents private; other members may use Family only. Each member chooses whether to enable notifications, sends their own generic test, and checks notification history as well as banners. An accepted push and a displayed notification are separate results. Windows Do not disturb and app banner settings can affect presentation.
+
+For the Singapore trial, each person chooses a small research task such as activities or a layover comparison. Record a responsible person, audience, source and assistant, and retain any required owner approval. Consumer assistant selection is a manual handoff. A successful synthetic owner workflow test proves persistence and draft preparation only; it does not prove other members' adoption or the accuracy of travel research.
