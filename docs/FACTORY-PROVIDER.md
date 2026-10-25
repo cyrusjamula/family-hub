@@ -28,7 +28,7 @@ Task operations documented for the selected route:
 | Stop | GitHub documents **Stop session** in its session viewer, which ends the Actions run and preserves pushed commits. The task REST reference inspected has no cancellation endpoint. Do not invent one or assume deleting an assignee cancels a run. |
 | Unknown start result | Persist `uncertain`, pause that scope, inspect provider tasks before any retry. A prompt marker is correlation evidence, not provider-enforced idempotency. Never automatically repeat an ambiguous POST. |
 
-Sources: [REST task reference](https://docs.github.com/en/rest/agent-tasks/agent-tasks), [session management](https://docs.github.com/en/copilot/how-tos/copilot-on-github/use-copilot-agents/manage-and-track-agents). Automated cancellation remains a **blocking capability gap** until a supported route is established and harmlessly verified. A local timeout or revoked credential does not prove remote work stopped.
+Sources: [REST task reference](https://docs.github.com/en/rest/agent-tasks/agent-tasks), [session management](https://docs.github.com/en/copilot/how-tos/copilot-on-github/use-copilot-agents/manage-and-track-agents). Automated cancellation remains a **blocking capability gap for unattended activation** until a supported route is established and harmlessly verified. A strictly owner-operated synthetic eligibility trial can instead use a verified manual Stop procedure, with the owner present throughout and separate exact trial/budget approval. Neither type of trial is authorized by this document. A local timeout or revoked credential does not prove remote work stopped.
 
 Codex Cloud's documented CLI submission uses the main CLI credentials and a published environment ID; task listing exposes IDs/status. This review does not establish a cancellation command or durable dispatch idempotency. Do not copy a personal `auth.json` into public-repository CI: official non-interactive guidance explicitly excludes public/open-source repositories from its advanced saved-ChatGPT-auth CI workflow. Use an approved product integration or separately reviewed trusted control plane instead. [CLI reference](https://learn.chatgpt.com/docs/cli/reference), [non-interactive authentication](https://learn.chatgpt.com/docs/non-interactive-mode).
 
@@ -53,7 +53,19 @@ The durable store, not model instructions, owns claims, approval expiry, pauses,
 
 ## Smallest live trial, prepared but not started
 
-After #39 and the tested controller pass, freeze one public/synthetic test-only issue: add a regression for a deterministic input-validation bug using fabricated records, touching only the named helper and test. Owner reviews its exact digest, provider, included-usage source, stop controls and single-attempt limit. Start one task, persist the run link, inspect progress, verify stop/recovery on the approved harmless trial, and review its PR/CI. No production secrets, private feedback, Google records, screenshots, deploy permissions or automatic merge enter the environment.
+Proposed source-only manifest:
+
+```json
+{"files":["scripts/runtime.mjs","test/runtime.test.js"]}
+```
+
+The proposed task is **test-only coverage for malformed and empty runtime pins**. Read the helper and extend `test/runtime.test.js` with fabricated inputs that assert rejection; do not claim a production bug has been found and do not modify the helper unless a separately reviewed failure warrants scope expansion. The two files passed the source-input preflight and their three existing focused tests passed locally. Those checks establish a small candidate input, not a safe provider environment or an authorized run.
+
+Before either trial, freeze the reviewed source commit and exact file digests, export **only those two approved files**, and verify the actual sandbox contains no other repository content, history, credentials or connected private sources. Full-repository checkout remains disallowed pending #39. A provider integration that necessarily clones the repository cannot be used for this reduced-input trial until that gap is resolved; a manifest beside a full checkout is not isolation. Dependency-free validation is `node --test test/runtime.test.js` with the reviewed Node pin.
+
+For a strictly owner-operated eligibility trial, the owner separately approves the exact task digest, provider, permitted included-usage billing source, no-overage evidence, single attempt, source export and verified manual Stop procedure. The owner remains present to monitor progress and stop work; preserve the run link and confirm terminal status. This can establish eligibility without pretending an unattended dispatcher is ready. No such approval or run has occurred.
+
+For an unattended trial, #39 and the tested #40 controller must pass **and** supported automated cancellation/reconciliation must be verified before separate activation approval. Record the durable run/PR links, evaluate the tests, and retain human review. Neither route permits production secrets, private feedback, Google records, screenshots, deployment permissions or automatic merge.
 
 Mock acceptance for #40 must assert **zero start calls** for disabled dispatch, absent/revoked billing authorization, stale entitlement/stop receipts, quota exhaustion, missing credential reference, failed dependency, changed scope, duplicate/concurrent claim and global pause. Simulate lost POST responses and cancellation failure; both must block retries until reconciled. These are required future tests, not tests claimed as run by this documentation change.
 
