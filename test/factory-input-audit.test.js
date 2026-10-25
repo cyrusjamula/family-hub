@@ -74,3 +74,19 @@ test('CLI exits nonzero with redacted output on invalid or rejected input', asyn
   await writeFile(manifest, JSON.stringify({ files: ['src/safe.js'] }));
   assert.equal(spawnSync(process.execPath, [script, root, manifest]).status, 0);
 });
+
+test('quoted JSON credential and infrastructure keys fail the audit and CLI without exposing values', async t => {
+  const root = await fixture(t);
+  const apiKey = 'synthetic_value_123456789';
+  const databaseId = 'synthetic-database-identifier-123456789';
+  await writeFile(path.join(root, 'src/config.json'), JSON.stringify({ api_key: apiKey, database_id: databaseId }));
+  const manifest = { files: ['src/config.json'] };
+  const result = await auditInputs(root, manifest);
+  assert.deepEqual(result, { ok: false, filesChecked: 1, findings: { 'credential-like-value': 1, 'infrastructure-identifier': 1 } });
+  const manifestPath = path.join(root, 'manifest.json');
+  await writeFile(manifestPath, JSON.stringify(manifest));
+  const cli = spawnSync(process.execPath, [path.resolve('scripts/factory-input-audit.mjs'), root, manifestPath], { encoding: 'utf8' });
+  assert.equal(cli.status, 1);
+  assert.deepEqual(JSON.parse(cli.stdout), result);
+  for (const value of [apiKey, databaseId, 'config.json']) assert.equal(cli.stdout.includes(value), false);
+});

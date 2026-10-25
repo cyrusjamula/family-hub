@@ -15,8 +15,8 @@ export function inspectText(text) {
   const emails = text.match(/[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [];
   if (emails.some(email => !/^(?:example\.(?:com|org|net)|test\.invalid)$/i.test(email.split('@').at(-1)))) classes.add('personal-email');
   if (/(?:drive\.google\.com\/(?:file\/d|drive\/folders)\/|docs\.google\.com\/(?:document|spreadsheets|presentation|forms)\/d\/)[A-Za-z0-9_-]{10,}|\b[A-Za-z0-9_-]{10,}@group\.calendar\.google\.com\b/i.test(text)) classes.add('private-google-reference');
-  if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:github_pat_[A-Za-z0-9_]{15,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{30,})\b|\b(?:access_token|refresh_token|client_secret|api_key)\s*[=:]\s*["'][A-Za-z0-9_./+=-]{12,}["']/i.test(text)) classes.add('credential-like-value');
-  if (/\b(?:database_id|account_id|access_app_id)\s*[=:]\s*["'][A-Za-z0-9-]{20,}["']/i.test(text)) classes.add('infrastructure-identifier');
+  if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:github_pat_[A-Za-z0-9_]{15,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{30,})\b|(?:"(?:access_token|refresh_token|client_secret|api_key)"|'(?:access_token|refresh_token|client_secret|api_key)'|\b(?:access_token|refresh_token|client_secret|api_key))\s*[=:]\s*["'][A-Za-z0-9_./+=-]{12,}["']/i.test(text)) classes.add('credential-like-value');
+  if (/(?:"(?:database_id|account_id|access_app_id)"|'(?:database_id|account_id|access_app_id)'|\b(?:database_id|account_id|access_app_id))\s*[=:]\s*["'][A-Za-z0-9-]{20,}["']/i.test(text)) classes.add('infrastructure-identifier');
   return [...classes].sort();
 }
 
