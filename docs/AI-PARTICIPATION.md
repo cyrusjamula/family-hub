@@ -17,7 +17,7 @@ Consumer Copilot, Microsoft 365 organizational connectors, Windows experimental 
 
 ## Smallest next proof
 
-**Conditional go:** an authenticated, tools-only ChatGPT MCP transport to existing task/feedback services. First confirm the actual account can install it. Reuse the existing backend; do not build another daily website or expose anonymous family data. A publicly reachable transport may still require authentication for every data operation. Source resources stay Restricted.
+**Conditional go for a capability spike:** confirm the actual account can install a custom plugin, then use a minimal isolated, tools-only MCP server with synthetic task state outside production. Its authentication setup needs separate review. This small spike can establish the read/write capability before the full Hub adapter exists. If successful, reuse that transport for existing task/feedback services. Reuse the existing backend; do not build another daily website or expose anonymous family data. A publicly reachable transport may still require authentication for every data operation. Source resources stay Restricted.
 
 **Hold the full cross-AI pilot:** free consumer Copilot write participation is unproven. Do not build its adapter on assumed API support. If an existing authorized Cowork entitlement is available, test whether it can operate the existing private workflow while the person stays in Copilot; this is assistant-driven browser interaction, not a direct API. If unavailable, the owner must choose an eligible supported AI, an approved existing paid entitlement, or defer this part. Do not silently substitute copy/paste, email relays, or daily website use.
 
@@ -26,13 +26,15 @@ Consumer Copilot, Microsoft 365 organizational connectors, Windows experimental 
 One focused validation session per intended client/account; stop on unavailable capability, login/consent wall, new cost, unsupported automation or uncertain identity.
 
 1. Verify product surface, plan and visible connection capability privately. Record only sanitized pass/fail evidence publicly; authentication happens directly with the provider.
-2. Use a synthetic shared task with a unique nonce and no real itinerary/personal data. Read its ID/version from inside the chosen AI.
+2. Use an isolated synthetic task with a unique nonce and no real itinerary/personal data; a minimal spike server may hold this state before the Hub adapter exists. Read its ID/version from inside the chosen AI.
 3. Propose a harmless update through a supported write path. Verify its returned receipt and reread the durable state; never infer success from assistant prose.
 4. Retrieve that same version from another authorized AI/member session. Test stale update, duplicate submission, unknown identity, revoked access and child-to-private denial with synthetic fixtures.
 5. Test draft decision retrieval and private feedback receipt. Task approval must not authorize a message, booking, purchase or private disclosure. Do not send any external messages in this trial.
 6. Record supported/blocked result, client, operation, observed outcome and remaining gate. No account-specific identifiers, screenshots, credentials or private content enter public evidence.
 
-Go to adapter implementation only when the chosen transport has an actual read/write proof, member identity boundary and bounded cost. Otherwise keep #34 open with the exact missing capability. Contract drafting may proceed as transport-independent work, but does not clear this gate.
+Go to full Hub adapter implementation only when the capability spike has an actual read/write proof, a reviewed member identity approach and bounded cost. Otherwise keep #34 open with the exact missing capability. Contract drafting may proceed as transport-independent work, but does not clear this gate.
+
+The connected browser could not open ChatGPT settings because of its host security policy. No workaround was attempted. The initial account capability check therefore needs the account holder to inspect the available plugin setup directly; this is blocked evidence, not a negative product-capability finding.
 
 ## Sources
 
