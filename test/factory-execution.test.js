@@ -115,3 +115,20 @@ test('missing adapter retains cleanup intent when an active run needs reconcilia
  const f=setup(t);f.store.setPaused(false);const r=await f.controller().dispatch(1);
  const unavailable=f.controller({simulationAdapter:undefined});assert.equal((await unavailable.reconcile(r.run.id)).state,'cancel_pending');assert.equal(f.calls.inspect,0);assert.equal(f.store.active().length,1);
 });
+test('an active run keeps its scope lock when a lower-numbered overlapping candidate becomes ready',async t=>{
+ const f=setup(t);f.store.setPaused(false);f.issue.number=2;f.issue.comments[0].body='/factory approve '+issueScopeDigest(f.issue);
+ const c=f.controller(),run=await c.dispatch(2);assert.equal(run.run.state,'running');
+ f.snapshot.issues.push(fixture(1));assert.equal((await c.reconcile(run.run.id)).state,'running');
+ await c.dispatch(1);assert.equal(f.calls.start,1);assert.equal(f.store.active().length,1);
+});
+test('missing or null external active inventory blocks initial, pre-start and active checks',async t=>{
+ for(const invalid of [undefined,null]){
+  const initial=setup(t);initial.store.setPaused(false);initial.snapshot.active=invalid;
+  await assert.rejects(initial.controller().dispatch(1),/active-work list/);assert.equal(initial.calls.start,0);
+  const pre=setup(t);pre.store.setPaused(false);let reads=0;
+  const controller=pre.controller({readSimulationSnapshot:async()=>{const snapshot=structuredClone(pre.snapshot);if(++reads===2)snapshot.active=invalid;return snapshot;}});
+  const result=await controller.dispatch(1);assert.equal(pre.calls.start,0);assert.equal(result.run.state,'abandoned');
+  const active=setup(t);active.store.setPaused(false);const c=active.controller(),started=await c.dispatch(1);active.snapshot.active=invalid;
+  assert.equal((await c.reconcile(started.run.id)).state,'cancel_pending');assert.equal(active.store.active().length,1);
+ }
+});
