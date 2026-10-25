@@ -15,6 +15,7 @@
     "jose": "6.2.13"
   },
   "devDependencies": {
+    "html2canvas": "1.4.1",
     "wrangler": "4.152.0"
   },
   "engines": {
