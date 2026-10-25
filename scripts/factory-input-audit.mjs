@@ -9,12 +9,51 @@ const TEXT_EXTENSIONS = new Set(['.js', '.mjs', '.json', '.md', '.html', '.css',
 const BLOCKED_SEGMENT = /^(?:\.git|\.env(?:\..*)?|node_modules|build|dist|coverage|artifacts?|uploads?|screenshots?|records?|secrets?|\.wrangler|\.dev\.vars(?:\..*)?)$/i;
 const BLOCKED_FILE = /(?:\.(?:db|sqlite\d?|pem|key|p12|pfx|log|png|jpe?g|webp|pdf|zip)$|(?:credentials?|tokens?|private[-_]data|diagnostics?|chat[-_]history)(?:[._-]|$))/i;
 
+// Each domain token is traversed once after an @ delimiter. Local-part
+// membership uses one adjacent character; no regexp retries at every offset.
+function inspectEmailReferences(text) {
+  let personal = false;
+  let calendar = false;
+  let cursor = 0;
+  while (cursor < text.length) {
+    const at = text.indexOf('@', cursor);
+    if (at < 0) break;
+    cursor = at + 1;
+    if (at === 0 || !/[A-Z0-9.!#$%&'*+/=?^_`{|}~-]/i.test(text[at - 1])) continue;
+    let end = cursor;
+    let candidateEnd = -1;
+    let dot = -1;
+    let suffixLetters = 0;
+    let suffixValid = false;
+    while (end < text.length && /[A-Z0-9.-]/i.test(text[end])) {
+      const character = text[end];
+      if (character === '.') {
+        dot = end;
+        suffixLetters = 0;
+        suffixValid = true;
+      } else if (suffixValid && /[A-Z]/i.test(character)) {
+        suffixLetters++;
+        if (suffixLetters >= 2 && dot > at + 1) candidateEnd = end + 1;
+      } else {
+        suffixValid = false;
+      }
+      end++;
+    }
+    cursor = end;
+    if (candidateEnd < 0) continue;
+    const domain = text.slice(at + 1, candidateEnd).toLowerCase();
+    if (!['example.com', 'example.org', 'example.net', 'test.invalid'].includes(domain)) personal = true;
+    if (domain === 'group.calendar.google.com' && at >= 10 && /^[A-Z0-9_-]{10}$/i.test(text.slice(at - 10, at))) calendar = true;
+  }
+  return { personal, calendar };
+}
+
 // Findings are deliberately class-only: never return matching text, snippets or paths.
 export function inspectText(text) {
   const classes = new Set();
-  const emails = text.match(/[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [];
-  if (emails.some(email => !/^(?:example\.(?:com|org|net)|test\.invalid)$/i.test(email.split('@').at(-1)))) classes.add('personal-email');
-  if (/(?:drive\.google\.com\/(?:file\/d|drive\/folders)\/|docs\.google\.com\/(?:document|spreadsheets|presentation|forms)\/d\/)[A-Za-z0-9_-]{10,}|\b[A-Za-z0-9_-]{10,}@group\.calendar\.google\.com\b/i.test(text)) classes.add('private-google-reference');
+  const emails = inspectEmailReferences(text);
+  if (emails.personal) classes.add('personal-email');
+  if (/(?:drive\.google\.com\/(?:file\/d|drive\/folders)\/|docs\.google\.com\/(?:document|spreadsheets|presentation|forms)\/d\/)[A-Za-z0-9_-]{10,}/i.test(text) || emails.calendar) classes.add('private-google-reference');
   if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:github_pat_[A-Za-z0-9_]{15,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{30,})\b|(?:"(?:access_token|refresh_token|client_secret|api_key)"|'(?:access_token|refresh_token|client_secret|api_key)'|\b(?:access_token|refresh_token|client_secret|api_key))\s*[=:]\s*["'][A-Za-z0-9_./+=-]{12,}["']/i.test(text)) classes.add('credential-like-value');
   if (/(?:"(?:database_id|account_id|access_app_id)"|'(?:database_id|account_id|access_app_id)'|\b(?:database_id|account_id|access_app_id))\s*[=:]\s*["'][A-Za-z0-9-]{20,}["']/i.test(text)) classes.add('infrastructure-identifier');
   return [...classes].sort();

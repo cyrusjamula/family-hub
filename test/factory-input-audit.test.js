@@ -102,3 +102,21 @@ test('sensitive names in intermediate directories fail before ordinary content i
   assert.deepEqual(result, { ok: false, filesChecked: 0, findings: { 'disallowed-path': 4 } });
   assert.equal(JSON.stringify(result).includes('messages'), false);
 });
+
+test('maximum-size matching and nonmatching email-like inputs finish within a bounded subprocess', () => {
+  const script = `import assert from 'node:assert/strict';
+    import {inspectText} from './scripts/factory-input-audit.mjs';
+    const limit=1024*1024;
+    for (const value of ['a'.repeat(limit), 'a-'.repeat(limit/2), '-'.repeat(limit)]) {
+      assert.deepEqual(inspectText(value), []);
+    }
+    for (const suffix of ['@fixture.invalid', '@'+'a'.repeat(limit/2)+'.invalid']) {
+      const value='a'.repeat(limit-suffix.length)+suffix;
+      assert.ok(inspectText(value).includes('personal-email'));
+    }
+    assert.ok(inspectText('a'.repeat(limit-26)+'@group.calendar.google.com').includes('private-google-reference'));
+    assert.deepEqual(inspectText('member@example.com.'), []);`;
+  const run = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 5000 });
+  assert.equal(run.error?.code, undefined, 'scanner exceeded the bounded execution window');
+  assert.equal(run.status, 0, run.stderr);
+});
