@@ -120,3 +120,29 @@ test('maximum-size matching and nonmatching email-like inputs finish within a bo
   assert.equal(run.error?.code, undefined, 'scanner exceeded the bounded execution window');
   assert.equal(run.status, 0, run.stderr);
 });
+
+test('plain YAML credential and infrastructure values fail closed with redacted CLI output', async t => {
+  const root = await fixture(t);
+  const apiKey = 'synthetic_value_123456789';
+  const databaseId = 'synthetic-database-identifier-123456789';
+  await writeFile(path.join(root, 'src/config.yaml'), `api_key: ${apiKey}\ndatabase_id: ${databaseId} # synthetic fixture\n`);
+  const manifest = { files: ['src/config.yaml'] };
+  const expected = { ok: false, filesChecked: 1, findings: { 'credential-like-value': 1, 'infrastructure-identifier': 1 } };
+  assert.deepEqual(await auditInputs(root, manifest), expected);
+  const manifestPath = path.join(root, 'manifest.json');
+  await writeFile(manifestPath, JSON.stringify(manifest));
+  const run = spawnSync(process.execPath, [path.resolve('scripts/factory-input-audit.mjs'), root, manifestPath], { encoding: 'utf8' });
+  assert.equal(run.status, 1);
+  assert.deepEqual(JSON.parse(run.stdout), expected);
+  for (const value of [apiKey, databaseId, 'config.yaml']) assert.equal(run.stdout.includes(value), false);
+});
+
+test('secret-named files are denied before reading innocuous contents', async t => {
+  const root = await fixture(t);
+  const paths = ['src/secrets.json', 'test/fixtures/secrets.txt', 'docs/secret-notes.md'];
+  for (const relative of paths) {
+    await mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+    await writeFile(path.join(root, relative), 'Ordinary synthetic prose.');
+  }
+  assert.deepEqual(await auditInputs(root, { files: paths }), { ok: false, filesChecked: 0, findings: { 'disallowed-path': 3 } });
+});

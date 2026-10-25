@@ -7,7 +7,7 @@ const ALLOWED_ROOTS = new Set(['src', 'public', 'scripts', 'test', 'docs', '.git
 const ROOT_FILES = new Set(['AGENTS.md', 'README.md', 'package.json', 'package-lock.json', '.nvmrc']);
 const TEXT_EXTENSIONS = new Set(['.js', '.mjs', '.json', '.md', '.html', '.css', '.yml', '.yaml', '.txt']);
 const BLOCKED_SEGMENT = /^(?:\.git|\.env(?:\..*)?|node_modules|build|dist|coverage|artifacts?|uploads?|screenshots?|records?|secrets?|\.wrangler|\.dev\.vars(?:\..*)?)$/i;
-const BLOCKED_FILE = /(?:\.(?:db|sqlite\d?|pem|key|p12|pfx|log|png|jpe?g|webp|pdf|zip)$|(?:credentials?|tokens?|private[-_]data|diagnostics?|chat[-_]history)(?:[._-]|$))/i;
+const BLOCKED_FILE = /(?:\.(?:db|sqlite\d?|pem|key|p12|pfx|log|png|jpe?g|webp|pdf|zip)$|(?:credentials?|tokens?|secrets?|private[-_]data|diagnostics?|chat[-_]history)(?:[._-]|$))/i;
 
 // Each domain token is traversed once after an @ delimiter. Local-part
 // membership uses one adjacent character; no regexp retries at every offset.
@@ -54,8 +54,8 @@ export function inspectText(text) {
   const emails = inspectEmailReferences(text);
   if (emails.personal) classes.add('personal-email');
   if (/(?:drive\.google\.com\/(?:file\/d|drive\/folders)\/|docs\.google\.com\/(?:document|spreadsheets|presentation|forms)\/d\/)[A-Za-z0-9_-]{10,}/i.test(text) || emails.calendar) classes.add('private-google-reference');
-  if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:github_pat_[A-Za-z0-9_]{15,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{30,})\b|(?:"(?:access_token|refresh_token|client_secret|api_key)"|'(?:access_token|refresh_token|client_secret|api_key)'|\b(?:access_token|refresh_token|client_secret|api_key))\s*[=:]\s*["'][A-Za-z0-9_./+=-]{12,}["']/i.test(text)) classes.add('credential-like-value');
-  if (/(?:"(?:database_id|account_id|access_app_id)"|'(?:database_id|account_id|access_app_id)'|\b(?:database_id|account_id|access_app_id))\s*[=:]\s*["'][A-Za-z0-9-]{20,}["']/i.test(text)) classes.add('infrastructure-identifier');
+  if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:github_pat_[A-Za-z0-9_]{15,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{30,})\b|(?:"(?:access_token|refresh_token|client_secret|api_key)"|'(?:access_token|refresh_token|client_secret|api_key)'|\b(?:access_token|refresh_token|client_secret|api_key))\s*[=:]\s*(?:["'][A-Za-z0-9_./+=-]{12,}["']|[A-Za-z0-9_./+=-]{12,}(?=[ \t]*(?:#.*)?$))/im.test(text)) classes.add('credential-like-value');
+  if (/(?:"(?:database_id|account_id|access_app_id)"|'(?:database_id|account_id|access_app_id)'|\b(?:database_id|account_id|access_app_id))\s*[=:]\s*(?:["'][A-Za-z0-9-]{20,}["']|[A-Za-z0-9-]{20,}(?=[ \t]*(?:#.*)?$))/im.test(text)) classes.add('infrastructure-identifier');
   return [...classes].sort();
 }
 
