@@ -20,6 +20,7 @@ async function client(person={name:'Owner',role:'owner',aiEnabled:true}){
   addEventListener(name,fn){this.events[name]=fn;}
  }
  for(const match of html.matchAll(/<([\w-]+)\b([^>]*\bid="([^"]+)"[^>]*)>/g)){const el=new Element(match[1]);el.hidden=/\bhidden\b/.test(match[2]);elements[match[3]]=el;}
+ const reminderNotice=new Element('p');reminderNotice.textContent=html.match(/<section id="reminders"[^>]*><p>([^<]*)<\/p>/)[1];elements.reminders.append(reminderNotice);elements.reminders.querySelector=selector=>selector==='p'?reminderNotice:null;
  const tabs=['chat','planner','settings','advanced'].map(view=>{const el=new Element('button');el.dataset.view=view;return el;});
  const body=new Element('body');body.append(...Object.values(elements));
  const document={body,visibilityState:'visible',getElementById:id=>elements[id],createElement:tag=>new Element(tag),createTextNode:text=>String(text),querySelectorAll:selector=>selector==='button'?all.filter(e=>e.tag==='button'):selector==='[data-view]'?tabs:[],addEventListener:(name,fn)=>{listeners[name]=fn;}};
@@ -32,7 +33,7 @@ async function client(person={name:'Owner',role:'owner',aiEnabled:true}){
  }};
  vm.runInNewContext(app+'\n;globalThis.hooks={refresh,calendarBoundary,getRoom:()=>room};',sandbox);
  for(let i=0;i<8;i++)await tick();
- return {elements,document,tabs,listeners,intervals,requests,response,messages,approvals,hooks:sandbox.hooks,setIntercept(fn){intercept=fn;},draft(text){elements.content.value=text;elements.content.events.input();},switchRoom:room=>elements[room].onclick()};
+ return {elements,reminderNotice,document,tabs,listeners,intervals,requests,response,messages,approvals,hooks:sandbox.hooks,setIntercept(fn){intercept=fn;},draft(text){elements.content.value=text;elements.content.events.input();},switchRoom:room=>elements[room].onclick()};
 }
 
 test('failed switch retains the displayed room, draft and submission audience',async()=>{
@@ -105,4 +106,14 @@ test('coordinator task drafts use the matching room, preserve prior drafts and n
 });
 test('failed coordinator-room switch leaves the existing audience and draft intact',async()=>{
  const c=await client();c.draft('Keep Family draft');c.setIntercept(r=>{if(r.room==='parents')throw Error('offline');});await c.listeners['task-compose']({detail:{room:'parents',content:'Private task'}});assert.equal(c.hooks.getRoom(),'family');assert.equal(c.elements.content.value,'Keep Family draft');assert.equal(c.requests.some(r=>r.path==='/api/chat'),false);
+});
+
+test('reminder scheduling explains the selected-room audience and generic push before submission',async()=>{
+ const c=await client();
+ assert.match(c.reminderNotice.textContent,/generic push alert/i);
+ assert.match(c.reminderNotice.textContent,/selected room/i);
+ assert.match(c.reminderNotice.textContent,/No email/i);
+ assert.doesNotMatch(c.reminderNotice.textContent,/do not send.*push/i);
+ assert.equal(c.elements['reminder-create'].textContent,'Schedule reminder');
+ assert.equal(c.requests.some(r=>r.path==='/api/reminders'&&r.body),false);
 });
