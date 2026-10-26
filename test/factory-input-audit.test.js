@@ -146,3 +146,34 @@ test('secret-named files are denied before reading innocuous contents', async t 
   }
   assert.deepEqual(await auditInputs(root, { files: paths }), { ok: false, filesChecked: 0, findings: { 'disallowed-path': 3 } });
 });
+
+test('repeated recognized keys with invalid scalar suffixes finish in a bounded subprocess', () => {
+  const script = `import assert from 'node:assert/strict';
+    import {inspectText} from './scripts/factory-input-audit.mjs';
+    for (const key of ['api_key=', 'client_secret=', 'account_id=', 'database_id=']) {
+      assert.deepEqual(inspectText(key.repeat(32768)+'!'), []);
+    }
+    assert.ok(inspectText('api_key: '+'a'.repeat(262144)).includes('credential-like-value'));
+    assert.ok(inspectText('database_id: '+'a'.repeat(262144)).includes('infrastructure-identifier'));
+    assert.deepEqual(inspectText(('api_key:'+String.fromCharCode(10)+'  ').repeat(32768)+'!'), []);
+    assert.deepEqual(inspectText(('- api_key=').repeat(32768)+'!'), []);
+    assert.ok(inspectText('- '.repeat(200000)+'api_key: synthetic_value_123456789').includes('credential-like-value'));`;
+  const run = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 3000 });
+  assert.equal(run.error?.code, undefined, 'recognized-key scanning exceeded its bounded execution window');
+  assert.equal(run.status, 0, run.stderr);
+});
+
+test('plain YAML sequence entries retain both sensitive finding classes', async t => {
+  const root = await fixture(t);
+  await writeFile(path.join(root, 'src/config.yaml'), 'providers:\n  - api_key: synthetic_value_123456789\n  - database_id: synthetic-database-identifier-123456789\n');
+  assert.deepEqual(await auditInputs(root, { files: ['src/config.yaml'] }), { ok: false, filesChecked: 1, findings: { 'credential-like-value': 1, 'infrastructure-identifier': 1 } });
+});
+
+test('empty YAML assignments recognize following indented scalars without crossing sibling keys', async t => {
+  const root = await fixture(t);
+  const file = path.join(root, 'src/config.yaml');
+  await writeFile(file, 'api_key:\n  # synthetic comment\n\n  synthetic_value_123456789\ndatabase_id:\n  synthetic-database-identifier-123456789\n');
+  assert.deepEqual(await auditInputs(root, { files: ['src/config.yaml'] }), { ok: false, filesChecked: 1, findings: { 'credential-like-value': 1, 'infrastructure-identifier': 1 } });
+  await writeFile(file, 'api_key:\nother: synthetic_value_123456789\ndatabase_id:\nsynthetic-database-identifier-123456789\n');
+  assert.deepEqual(await auditInputs(root, { files: ['src/config.yaml'] }), { ok: true, filesChecked: 1, findings: {} });
+});

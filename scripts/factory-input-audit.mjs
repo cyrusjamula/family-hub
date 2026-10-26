@@ -48,14 +48,54 @@ function inspectEmailReferences(text) {
   return { personal, calendar };
 }
 
+// Scan disjoint lines, including sequence markers and a following indented
+// scalar. Pending assignments never rescan a prior or nested key's content.
+function hasPlainAssignment(lines, keyPrefix, minimum, allowedCharacter) {
+  const scalarText = value => {
+    const comment = value.indexOf('#');
+    return (comment < 0 ? value : value.slice(0, comment)).trimEnd();
+  };
+  const validScalar = scalar => {
+    if (scalar.length < minimum) return false;
+    for (const character of scalar) {
+      if (!allowedCharacter.test(character)) return false;
+    }
+    return true;
+  };
+  let pendingIndent = -1;
+  for (const line of lines) {
+    let indent = 0;
+    while (indent < line.length && /[ \t]/.test(line[indent])) indent++;
+    if (indent === line.length || line[indent] === '#') continue;
+    if (pendingIndent >= 0) {
+      if (indent > pendingIndent && validScalar(scalarText(line.slice(indent)))) return true;
+      pendingIndent = -1;
+    }
+    let offset = indent;
+    while (line[offset] === '-' && /[ \t]/.test(line[offset + 1] || '')) {
+      offset++;
+      while (offset < line.length && /[ \t]/.test(line[offset])) offset++;
+    }
+    const prefix = keyPrefix.exec(line.slice(offset));
+    if (!prefix) continue;
+    const scalar = scalarText(line.slice(offset + prefix[0].length));
+    if (!scalar) { pendingIndent = offset; continue; }
+    if (validScalar(scalar)) return true;
+  }
+  return false;
+}
+
 // Findings are deliberately class-only: never return matching text, snippets or paths.
 export function inspectText(text) {
   const classes = new Set();
+  const lines = text.split(/\r\n|\r|\n/);
+  const plainCredential = hasPlainAssignment(lines, /^[ \t]*(?:"(?:access_token|refresh_token|client_secret|api_key)"|'(?:access_token|refresh_token|client_secret|api_key)'|(?:access_token|refresh_token|client_secret|api_key))[ \t]*[=:][ \t]*/i, 12, /[A-Z0-9_./+=-]/i);
+  const plainInfrastructure = hasPlainAssignment(lines, /^[ \t]*(?:"(?:database_id|account_id|access_app_id)"|'(?:database_id|account_id|access_app_id)'|(?:database_id|account_id|access_app_id))[ \t]*[=:][ \t]*/i, 20, /[A-Z0-9-]/i);
   const emails = inspectEmailReferences(text);
   if (emails.personal) classes.add('personal-email');
   if (/(?:drive\.google\.com\/(?:file\/d|drive\/folders)\/|docs\.google\.com\/(?:document|spreadsheets|presentation|forms)\/d\/)[A-Za-z0-9_-]{10,}/i.test(text) || emails.calendar) classes.add('private-google-reference');
-  if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:github_pat_[A-Za-z0-9_]{15,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{30,})\b|(?:"(?:access_token|refresh_token|client_secret|api_key)"|'(?:access_token|refresh_token|client_secret|api_key)'|\b(?:access_token|refresh_token|client_secret|api_key))\s*[=:]\s*(?:["'][A-Za-z0-9_./+=-]{12,}["']|[A-Za-z0-9_./+=-]{12,}(?=[ \t]*(?:#.*)?$))/im.test(text)) classes.add('credential-like-value');
-  if (/(?:"(?:database_id|account_id|access_app_id)"|'(?:database_id|account_id|access_app_id)'|\b(?:database_id|account_id|access_app_id))\s*[=:]\s*(?:["'][A-Za-z0-9-]{20,}["']|[A-Za-z0-9-]{20,}(?=[ \t]*(?:#.*)?$))/im.test(text)) classes.add('infrastructure-identifier');
+  if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:github_pat_[A-Za-z0-9_]{15,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{30,})\b|(?:"(?:access_token|refresh_token|client_secret|api_key)"|'(?:access_token|refresh_token|client_secret|api_key)'|\b(?:access_token|refresh_token|client_secret|api_key))\s*[=:]\s*["'][A-Za-z0-9_./+=-]{12,}["']/i.test(text) || plainCredential) classes.add('credential-like-value');
+  if (/(?:"(?:database_id|account_id|access_app_id)"|'(?:database_id|account_id|access_app_id)'|\b(?:database_id|account_id|access_app_id))\s*[=:]\s*["'][A-Za-z0-9-]{20,}["']/i.test(text) || plainInfrastructure) classes.add('infrastructure-identifier');
   return [...classes].sort();
 }
 
