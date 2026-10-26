@@ -101,3 +101,59 @@ test('invalid IDs and invalid configuration make no provider request',async()=>{
   {token:'x',maxPages:11},{token:'x',maxPages:0},{token:'x',send:null}])assert.throws(()=>createGitHubTaskReader({...options}),/readiness is unknown/);
  assert.equal(calls,0);
 });
+
+test('advertised bucket totals cannot hide omitted tasks or drift during pagination',async()=>{
+ const totals={total_active_count:1,total_archived_count:0};
+ await failed(setup(async()=>response({...totals,tasks:[]})).inventory());
+ for(const counts of [{total_active_count:1},{total_active_count:-1,total_archived_count:0},
+  {total_active_count:1.5,total_archived_count:0},{total_active_count:'1',total_archived_count:0}]){
+  await failed(setup(async()=>response({...counts,tasks:[task(1)]})).inventory());
+ }
+ let calls=0;await failed(setup(async()=>response({tasks:++calls===1?[task(1)]:[],
+  total_active_count:calls===1?1:2,total_archived_count:0})).inventory());
+ let read=0;const valid=await setup(async()=>response({...totals,tasks:++read===1?[task(1)]:[]})).inventory();
+ assert.equal(valid.hasNonterminalTasks,false);assert.equal(valid.tasks.length,1);
+ const archivedCounts={total_active_count:0,total_archived_count:1};
+ await failed(setup(async()=>response({...archivedCounts,tasks:[]})).inventory());
+ let missing=0;await failed(setup(async()=>response(++missing===1?
+  {...totals,tasks:[task(1)]}:{tasks:[]})).inventory());
+ let archived=0;const both=await setup(async()=>response({total_active_count:1,total_archived_count:1,
+  tasks:[task(++archived,archived===2?'queued':'completed')]})).inventory();
+ assert.equal(both.hasNonterminalTasks,true);assert.equal(both.tasks.length,2);
+});
+
+test('all pagination relations are validated and later last requires next',async()=>{
+ for(const build of [
+  url=>{url.searchParams.set('page','2');return `<${url}>; rel="last"`;},
+  url=>`<not-a-url-private-synthetic>; rel="last"`,
+  url=>{url.searchParams.set('page','2');return `<${url}>; rel="next", <https://example.test/tasks>; rel="last"`;},
+  url=>{url.searchParams.set('page','2');return `<${url}>; rel="next", <${url}>; rel="next"`;},
+  url=>`<${url}>; rel="prev"`,
+  url=>{url.searchParams.set('page','3');return `<${url}>; rel="first"`;}
+ ])await failed(setup(async url=>response({tasks:[]},{link:build(new URL(url))})).inventory());
+ const counts={total_active_count:2,total_archived_count:0};
+ const result=await setup(async url=>{
+  const parsed=new URL(url);
+  if(parsed.searchParams.get('is_archived')==='true')return response({...counts,tasks:[]});
+  if(parsed.searchParams.get('page')==='1'){
+   parsed.searchParams.set('page','2');return response({...counts,tasks:[task(1)]},{link:`<${parsed}>; rel="next", <${parsed}>; rel="last"`});
+  }
+  parsed.searchParams.set('page','1');return response({...counts,tasks:[task(2,'queued')]},{link:`<${parsed}>; rel="prev", <${parsed}>; rel="first"`});
+ }).inventory();
+ assert.equal(result.tasks.length,2);assert.equal(result.hasNonterminalTasks,true);
+});
+
+test('an earlier promised last page cannot disappear or change on a later page',async()=>{
+ for(const changedLast of [undefined,2]){
+  await failed(setup(async url=>{
+   const parsed=new URL(url);const page=Number(parsed.searchParams.get('page'));
+   if(parsed.searchParams.get('is_archived')==='true')return response({tasks:[]});
+   if(page===1){
+    const next=new URL(url);next.searchParams.set('page','2');const last=new URL(url);last.searchParams.set('page','3');
+    return response({tasks:[task(1)]},{link:`<${next}>; rel="next", <${last}>; rel="last"`});
+   }
+   if(changedLast){parsed.searchParams.set('page',String(changedLast));return response({tasks:[task(2)]},{link:`<${parsed}>; rel="last"`});}
+   return response({tasks:[task(2)]});
+  }).inventory());
+ }
+});

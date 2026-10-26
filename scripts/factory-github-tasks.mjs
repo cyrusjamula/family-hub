@@ -8,6 +8,36 @@ const states=new Set([...terminal,'queued','in_progress','idle','waiting_for_use
 const maxBytes=1024*1024;
 const invalid=()=>Error('GitHub task read unavailable; readiness is unknown');
 
+function pageLinks(link,url,page,maxPages){
+ const relations=new Map();
+ if(link)for(const part of link.split(',')){
+  const match=/^\s*<([^>]+)>;\s*rel="(next|prev|first|last)"\s*$/.exec(part);
+  if(!match||relations.has(match[2]))throw invalid();
+  let target;try{target=new URL(match[1]);}catch{throw invalid();}
+  const targetPage=target.searchParams.get('page');const n=Number(targetPage);
+  const expected=new URL(url);expected.searchParams.set('page',targetPage);
+  if(! /^[1-9]\d*$/.test(targetPage||'')||!Number.isSafeInteger(n)||n>maxPages||
+     target.origin!==expected.origin||target.pathname!==expected.pathname||target.hash||target.username||target.password||
+     [...target.searchParams].length!==[...expected.searchParams].length||
+     [...expected.searchParams].some(([key,value])=>target.searchParams.get(key)!==value))throw invalid();
+  relations.set(match[2],n);
+ }
+ if((relations.has('first')&&relations.get('first')!==1)||
+    (relations.has('prev')&&relations.get('prev')!==page-1)||
+    (relations.has('next')&&relations.get('next')!==page+1)||
+    (relations.has('last')&&(relations.get('last')<page||
+     (relations.get('last')>page&&!relations.has('next'))||
+     (relations.has('next')&&relations.get('last')<relations.get('next')))))throw invalid();
+ return {more:relations.has('next'),last:relations.get('last')};
+}
+
+function advertisedTotals(data){
+ const keys=['total_active_count','total_archived_count'];
+ if(keys.every(key=>!Object.hasOwn(data,key)))return null;
+ if(!keys.every(key=>Number.isSafeInteger(data[key])&&data[key]>=0))throw invalid();
+ return keys.map(key=>data[key]);
+}
+
 function taskSummary(task,expectedId){
  if(!task||typeof task.id!=='string'||!uuid.test(task.id)||
     (expectedId!==undefined&&task.id!==expectedId)||!states.has(task.state)||
@@ -45,32 +75,29 @@ export function createGitHubTaskReader({token,send=fetch,timeoutMs=10000,maxPage
  }
  return Object.freeze({
   async inventory(){
-   const tasks=[];const seen=new Set();
+   const tasks=[];const seen=new Set();let totals;
    // Non-archived alone is not a complete inventory: archived rows are checked too.
    for(const archived of [false,true]){
+    let bucketCount=0;let promisedLast;
     for(let page=1;page<=maxPages;page++){
      const url=`${root}?per_page=100&page=${page}&is_archived=${archived}&sort=created_at&direction=asc`;
      const {data,link}=await get(url);
      if(!Array.isArray(data?.tasks)||data.tasks.length>100)throw invalid();
+     const counts=advertisedTotals(data);
+     // Preview responses may omit totals; when advertised, both counts must
+     // remain present and unchanged throughout this point-in-time collection.
+     if(totals===undefined)totals=counts;
+     else if(JSON.stringify(counts)!==JSON.stringify(totals))throw invalid();
+     bucketCount+=data.tasks.length;
+     const bucketTotal=totals?.[archived?1:0];
+     if(bucketTotal!==undefined&&bucketCount>bucketTotal)throw invalid();
      for(const row of data.tasks){const task=taskSummary(row);if(seen.has(task.id))throw invalid();seen.add(task.id);tasks.push(task);}
-     let more=false;
-     if(link){
-      // Follow only the documented next-page progression, never a returned URL.
-      for(const part of link.split(',')){
-       const match=/^\s*<([^>]+)>;\s*rel="(next|prev|first|last)"\s*$/.exec(part);
-       if(!match)throw invalid();
-       if(match[2]==='next'){
-        if(more)throw invalid();more=true;
-        let next;try{next=new URL(match[1]);}catch{throw invalid();}
-        const expected=new URL(url);
-        expected.searchParams.set('page',String(page+1));
-        if(next.origin!==expected.origin||next.pathname!==expected.pathname||next.hash||
-           [...next.searchParams].length!==[...expected.searchParams].length||
-           [...expected.searchParams].some(([key,value])=>next.searchParams.get(key)!==value))throw invalid();
-       }
-      }
-     }
-     if(!more)break;
+     // Inspect every relation but construct requests ourselves; never follow URLs.
+     const {more,last}=pageLinks(link,url,page,maxPages);
+     if(last!==undefined){if(promisedLast!==undefined&&promisedLast!==last)throw invalid();promisedLast=last;}
+     if(promisedLast!==undefined&&((!more&&page!==promisedLast)||(more&&page>=promisedLast)))throw invalid();
+     if(!more){if(bucketTotal!==undefined&&bucketCount!==bucketTotal)throw invalid();break;}
+     if(bucketTotal!==undefined&&bucketCount>=bucketTotal)throw invalid();
      if(page===maxPages||!data.tasks.length)throw invalid();
     }
    }
