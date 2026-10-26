@@ -48,22 +48,39 @@ function inspectEmailReferences(text) {
   return { personal, calendar };
 }
 
-// Plain scalars are parsed only after a recognized key at the start of a
-// line. A value is traversed once, never retried from nested key occurrences.
+// Scan disjoint lines, including sequence markers and a following indented
+// scalar. Pending assignments never rescan a prior or nested key's content.
 function hasPlainAssignment(lines, keyPrefix, minimum, allowedCharacter) {
-  for (const line of lines) {
-    const prefix = keyPrefix.exec(line);
-    if (!prefix) continue;
-    const remainder = line.slice(prefix[0].length);
-    if (remainder.startsWith('"') || remainder.startsWith("'")) continue;
-    const comment = remainder.indexOf('#');
-    const scalar = (comment < 0 ? remainder : remainder.slice(0, comment)).trimEnd();
-    if (scalar.length < minimum) continue;
-    let valid = true;
+  const scalarText = value => {
+    const comment = value.indexOf('#');
+    return (comment < 0 ? value : value.slice(0, comment)).trimEnd();
+  };
+  const validScalar = scalar => {
+    if (scalar.length < minimum) return false;
     for (const character of scalar) {
-      if (!allowedCharacter.test(character)) { valid = false; break; }
+      if (!allowedCharacter.test(character)) return false;
     }
-    if (valid) return true;
+    return true;
+  };
+  let pendingIndent = -1;
+  for (const line of lines) {
+    let indent = 0;
+    while (indent < line.length && /[ \t]/.test(line[indent])) indent++;
+    if (indent === line.length || line[indent] === '#') continue;
+    if (pendingIndent >= 0) {
+      if (indent > pendingIndent && validScalar(scalarText(line.slice(indent)))) return true;
+      pendingIndent = -1;
+    }
+    let offset = indent;
+    while (line[offset] === '-' && /[ \t]/.test(line[offset + 1] || '')) {
+      offset++;
+      while (offset < line.length && /[ \t]/.test(line[offset])) offset++;
+    }
+    const prefix = keyPrefix.exec(line.slice(offset));
+    if (!prefix) continue;
+    const scalar = scalarText(line.slice(offset + prefix[0].length));
+    if (!scalar) { pendingIndent = offset; continue; }
+    if (validScalar(scalar)) return true;
   }
   return false;
 }
