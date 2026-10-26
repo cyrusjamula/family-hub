@@ -21,7 +21,17 @@ At most two independent candidates fit alongside active work. Overlapping file/d
 
 The current output always sets `dispatchEnabled: false`. It makes no network call, writes no state, starts no agents and incurs no model usage. Tests cover scope/approval changes, owner attribution, readiness, dependencies, concurrency and conflicts. This is preparation for a small controlled trial, not a claim of an operational factory.
 
-## Running a read-only proposal
+## GitHub cloud-agent task reads (issue #40)
+
+`createGitHubTaskReader` in `scripts/factory-github-tasks.mjs` implements the fixed-repository task-list and task-detail GET interfaces. A trusted host supplies its scoped user credential; the module has no CLI, workflow trigger, start, cancellation or credential-discovery path. It is not connected to the simulation controller or the production Worker. Never place a personal CLI credential in the coding sandbox or public workflow.
+
+The reader checks both archived and non-archived task inventories with bounded pagination, per-response size and time limits, no redirects/retries, and exact task/repository identity checks. Duplicate rows, malformed pagination, denied requests, unknown states and contradictory terminal sessions make readiness unknown rather than implying idle capacity. Output contains only task/session IDs, validated states and terminal flags; prompts, diagnostics and credentials are omitted. Every result retains `dispatchEnabled: false`; inspection also retains `cancellationAvailable: false`.
+
+These reads are point-in-time observations, not atomic dispatch locks, authenticated owner approvals, budget evidence or proof of write access. Concurrent task changes can invalidate the observation; a future live controller must recheck state under its durable claim. Session detail must be complete and consistent before accepting a terminal result. A failed/oversized read blocks readiness rather than providing a partial inventory.
+
+The [task API reference](https://docs.github.com/en/rest/agent-tasks/agent-tasks) documents user-token authentication and Agent tasks permissions. The [Actions cancellation API](https://docs.github.com/en/rest/actions/workflow-runs#cancel-a-workflow-run) requires Actions: write, but task-to-run correlation and its effect on a live agent remain unverified. Do not infer ownership from matching timestamps or branch names, and do not call Actions cancellation merely because a historical run is cancelled. Current synthetic regression tests verify read semantics and failure handling only; no live adapter acceptance or factory activation is claimed.
+
+## Running a read-only proposal (existing collector)
 
 After this PR is reviewed and merged, open Actions → Propose approved issue work → Run workflow on main. It uses the shared Node pin and no npm install or model dependency. The GitHub-provided token has read-only repository scopes, exists only in the collection step, is never printed or persisted, and can only be sent to the fixed GitHub API origin with redirects disabled. There are no issue/label/comment writes, agent assignments, PR creation, merges, migrations or deployments.
 
