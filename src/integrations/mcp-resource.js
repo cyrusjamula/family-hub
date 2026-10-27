@@ -29,11 +29,11 @@ export function createMcpResourceBoundary({resource,issuer,verificationKey,resol
     if(typeof payload.sub!=='string'||!payload.sub||payload.sub.length>256||typeof payload.scope!=='string')return {response:deny()};
     const scopes=payload.scope.split(' ');
     if(scopes.some(s=>!s||!allowedScopes.has(s))||new Set(scopes).size!==scopes.length)return {response:deny()};
-    if(!scopes.includes(requiredScope))return {response:new Response(null,{status:403,headers:{'www-authenticate':`${challenge}, error="insufficient_scope", scope="${requiredScope}"`,'cache-control':'no-store'}})};
     // Resolve membership on every call. Token-provided roles/room names are
     // untrusted. Downstream handlers must enforce room and action permissions.
     const member=await resolveMember(payload.sub);
     if(!member||typeof member.id!=='string'||!member.id||!['owner','parent','child'].includes(member.role))return {response:deny()};
+    if(!scopes.includes(requiredScope))return {response:new Response(null,{status:403,headers:{'www-authenticate':`${challenge}, error="insufficient_scope", scope="${requiredScope}"`,'cache-control':'no-store'}})};
     return {member:{id:member.id,role:member.role},scope:requiredScope};
    }catch{return {response:deny()};}
   }

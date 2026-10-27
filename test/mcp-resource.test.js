@@ -21,6 +21,7 @@ test('metadata and unauthenticated challenge identify the exact resource',async(
 test('valid scoped signed token resolves current membership, never its claimed role',async()=>{
  const f=await base();const signed=await token(f.privateKey,{role:'owner',room:'parents'});
  assert.deepEqual(await f.boundary.authorize(request('Bearer '+signed),'tasks:read'),{member:{id:'fixture-a',role:'child'},scope:'tasks:read'});
+ for(const prefix of ['bearer ','BEARER  ','Bearer   '])assert.deepEqual(await f.boundary.authorize(request(prefix+signed),'tasks:read'),{member:{id:'fixture-a',role:'child'},scope:'tasks:read'});
  f.remove();assert.equal((await f.boundary.authorize(request('Bearer '+signed),'tasks:read')).response.status,401);
 });
 
@@ -28,14 +29,16 @@ test('wrong key, issuer, audience, expiry, scopes and unknown member cannot auth
  const f=await base(),other=await generateKeyPair('ES256');
  const invalid=[await token(other.privateKey),await token(f.privateKey,{iss:'https://evil.example/'}),
   await token(f.privateKey,{aud:'https://example.test/'}),await token(f.privateKey,{expired:true}),
-  await token(f.privateKey,{scope:'tasks:write'}),await token(f.privateKey,{scope:'tasks:read unknown'}),
+  await token(f.privateKey,{scope:'tasks:read unknown'}),
   await token(f.privateKey,{scope:'tasks:read tasks:read'}),await token(f.privateKey,{sub:'fixture-other'}),await token(f.privateKey,{typ:'JWT'}),'not-a-jwt'];
  for(const value of invalid)assert.equal((await f.boundary.authorize(request('Bearer '+value),'tasks:read')).response.status,401);
  assert.equal((await f.boundary.authorize(request('Bearer '+await token(f.privateKey)),'tasks:admin')).response.status,401);
 });
 
 test('a read-only token cannot authorize writes and lookup failures fail closed',async()=>{
- const f=await base(),signed=await token(f.privateKey);assert.equal((await f.boundary.authorize(request('Bearer '+signed),'tasks:write')).response.status,401);
+ const f=await base(),signed=await token(f.privateKey);const denial=(await f.boundary.authorize(request('Bearer '+signed),'tasks:write')).response;
+ assert.equal(denial.status,403);assert.equal(denial.headers.get('www-authenticate'),'Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resource/mcp", error="insufficient_scope", scope="tasks:write"');assert.equal(denial.headers.get('cache-control'),'no-store');
+ f.remove();assert.equal((await f.boundary.authorize(request('Bearer '+signed),'tasks:write')).response.status,401);
  assert.equal((await f.boundary.authorize(new Request('https://evil.example/mcp',{method:'POST',headers:{authorization:'Bearer '+signed}}),'tasks:read')).response.status,401);
  const {publicKey,privateKey}=await generateKeyPair('ES256');const broken=createMcpResourceBoundary({resource,issuer,verificationKey:publicKey,resolveMember:async()=>{throw Error('private details');}});
  const result=await broken.authorize(request('Bearer '+await token(privateKey)),'tasks:read');assert.equal(result.response.status,401);assert.equal(await result.response.text(),'');
