@@ -4,7 +4,7 @@ import {factoryPolicy,planFactory} from './factory-plan.mjs';
 // The reader/flags below are injected test fixtures, NOT authenticated evidence.
 // Production needs a separately reviewed trusted GitHub collector, entitlement/
 // budget enforcement, durable shared storage and a supported provider adapter.
-const controls=['scripts/factory-dispatch.mjs','scripts/factory-store.mjs','scripts/factory-input-audit.mjs'];
+const controls=['scripts/factory-dispatch.mjs','scripts/factory-store.mjs','scripts/factory-input-audit.mjs','scripts/factory-github-tasks.mjs'];
 const changesControls=files=>files.some(file=>controls.some(control=>file===control||file.startsWith(control+'/')||control.startsWith(file+'/')));
 const prerequisites=['activation','entitlement','budget','sourceAudit'];
 const bounded=async(fn,timeoutMs)=>{
