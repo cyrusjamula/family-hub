@@ -1,7 +1,7 @@
 export const COPILOT_REVIEW_CHECK='copilot-review';
 const reviewer='copilot-pull-request-reviewer[bot]';
 
-export async function reconcilePullRequests({github,context,core}){
+export async function reconcilePullRequests({github,context,core,wait=ms=>new Promise(resolve=>setTimeout(resolve,ms))}){
  const repo=context.repo;
  const pulls=context.eventName==='pull_request_target'
   ?[context.payload.pull_request]
@@ -42,11 +42,36 @@ export async function reconcilePullRequests({github,context,core}){
    node(id: $id) { ... on PullRequest { autoMergeRequest { enabledAt } } }
   }`,{id:pr.node_id});
   if(!node)throw Error(`PR #${pr.number}: could not read auto-merge state.`);
-  if(!node.autoMergeRequest)await github.graphql(`mutation($id: ID!) {
+  let changedWhileWaiting=false;
+  if(!node.autoMergeRequest){
+   for(let attempt=0;attempt<3;attempt++){
+    try{
+     await github.graphql(`mutation($id: ID!) {
    enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: SQUASH}) {
     pullRequest { number }
    }
   }`,{id:pr.node_id});
+     break;
+    }catch(error){
+     // GitHub can temporarily reject a PR while checks change status. Only
+     // retry this specific response, and fail visibly if it never settles.
+     const unstable=Array.isArray(error?.errors)&&error.errors.length===1&&
+      error.errors[0]?.type==='UNPROCESSABLE'&&error.errors[0]?.message==='Pull request Pull request is in unstable status';
+     if(!unstable||attempt===2)throw error;
+     await wait(2000);
+     const {data:current}=await github.rest.pulls.get({...repo,pull_number:pr.number});
+     if(current.state!=='open'||current.draft||current.head.sha!==pr.head.sha){
+      core.info(`PR #${pr.number}: changed while waiting for mergeability.`);changedWhileWaiting=true;break;
+     }
+     const status=await github.graphql(`query($id: ID!) {
+      node(id: $id) { ... on PullRequest { autoMergeRequest { enabledAt } } }
+     }`,{id:pr.node_id});
+     if(!status.node)throw Error(`PR #${pr.number}: could not read auto-merge state.`);
+     if(status.node.autoMergeRequest)break;
+    }
+   }
+  }
+  if(changedWhileWaiting)continue;
   core.info(`PR #${pr.number}: squash auto-merge enabled after Copilot review.`);
  }
 }
