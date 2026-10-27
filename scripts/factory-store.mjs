@@ -62,7 +62,10 @@ export class FactoryStore {
    // An uncorrelated terminal report is not evidence that an uncertain start
    // ended. Keep its lock until the provider identity is established or an
    // authoritative absence is explicitly reconciled.
-   if(['failed','cancelled'].includes(state)&&!(externalId||run.external_id))throw Error('provider run id required');
+   // A stored identity alone does not prove that this particular terminal
+   // response belongs to the run. Require the adapter to echo the identity;
+   // the check above rejects a mismatch, and omission must retain the lock.
+   if(['failed','cancelled'].includes(state)&&!externalId)throw Error('provider run id required');
    if(['running','review'].includes(state)&&!(externalId||run.external_id))throw Error('provider run id required');
    if(state==='review'&&!(prUrl||run.pr_url))throw Error('review PR required');
    // Cancellation cannot be cleared by late/out-of-order running or review reports.
