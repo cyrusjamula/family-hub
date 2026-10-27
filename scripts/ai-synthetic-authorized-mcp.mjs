@@ -20,10 +20,16 @@ const descriptors=Object.entries(methods).map(([name,v])=>({name,description:'Fi
  annotations:{readOnlyHint:v.readOnly,destructiveHint:false,openWorldHint:false}}));
 const result=x=>({resultType:'complete',_meta:{[prefix+'serverInfo']:info},...x});
 async function readBody(request){
- let size=0;const chunks=[];
- for await(const part of request){size+=part.length;if(size<=8192)chunks.push(part);}
- if(size>8192)throw Error('oversized');
- return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(chunks)));
+ const bytes=await new Promise((resolve,reject)=>{
+  let size=0;const chunks=[];
+  const cleanup=()=>{request.off('data',onData);request.off('end',onEnd);request.off('error',onError);request.off('aborted',onAborted);};
+  const onData=part=>{size+=part.length;if(size>8192){request.pause();cleanup();request.once('error',()=>{});const error=Error('oversized');error.code='OVERSIZED';reject(error);return;}chunks.push(part);};
+  const onEnd=()=>{cleanup();resolve(Buffer.concat(chunks));};
+  const onError=()=>{cleanup();reject(Error('invalid request'));};
+  const onAborted=()=>{cleanup();reject(Error('aborted request'));};
+  request.on('data',onData);request.once('end',onEnd);request.once('error',onError);request.once('aborted',onAborted);
+ });
+ return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
 }
 
 export async function startSyntheticAuthorizedMcp({verificationKey,port=0}={}){
@@ -37,7 +43,14 @@ export async function startSyntheticAuthorizedMcp({verificationKey,port=0}={}){
   if(!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(req.headers['content-type']||''))return fail(415,null,-32600,'JSON UTF-8 required');
   const accepted=(req.headers.accept||'').split(',').map(x=>x.trim().toLowerCase()).filter(x=>!/(?:^|;)\s*q=0(?:\.0*)?(?:;|$)/.test(x)).map(x=>x.split(';')[0].trim());
   if(!['application/json','text/event-stream'].every(x=>accepted.includes(x)))return fail(406,null,-32600,'Both MCP response types required');
-  let rpc;try{rpc=await readBody(req);}catch{return fail(400,null,-32700,'Invalid or oversized JSON');}
+  let rpc;try{rpc=await readBody(req);}catch(error){
+   if(error.code==='OVERSIZED'){
+    const socket=req.socket;
+    res.writeHead(413,{'content-type':'application/json','cache-control':'no-store','connection':'close'});
+    return res.end(JSON.stringify({jsonrpc:'2.0',id:null,error:{code:-32700,message:'Invalid or oversized JSON'}}),()=>socket.destroy());
+   }
+   return fail(400,null,-32700,'Invalid or oversized JSON');
+  }
   if(!object(rpc)||rpc.jsonrpc!=='2.0'||typeof rpc.method!=='string'||!Object.hasOwn(rpc,'id')||!(typeof rpc.id==='string'||Number.isSafeInteger(rpc.id))||!object(rpc.params))return fail(400,null,-32600,'Invalid request');
   const id=rpc.id,meta=rpc.params._meta;
   if(!object(meta)||meta[prefix+'protocolVersion']!==SPIKE_PROTOCOL||!object(meta[prefix+'clientCapabilities'])||req.headers['mcp-protocol-version']!==SPIKE_PROTOCOL||req.headers['mcp-method']!==rpc.method)return fail(400,id,-32602,'Invalid request metadata');

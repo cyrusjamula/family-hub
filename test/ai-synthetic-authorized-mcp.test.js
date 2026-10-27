@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {request as httpRequest} from 'node:http';
 import {generateKeyPair,SignJWT} from 'jose';
 import {startSyntheticAuthorizedMcp} from '../scripts/ai-synthetic-authorized-mcp.mjs';
 import {syntheticAudience,syntheticIssuer} from '../scripts/ai-synthetic-auth.mjs';
@@ -40,6 +41,19 @@ test('loopback MCP enforces synthetic per-member token and room boundaries',asyn
  assert.equal((await call('synthetic_family_read',{},child,{'mcp-name':other})).status,400);
  assert.equal((await call('synthetic_family_read',{},child,{'mcp-name':encoded.replace('?=','!')})).status,400);
  assert.equal((await value(await call('synthetic_family_read'))).version,1);
+});
+
+test('an oversized unfinished upload is rejected before EOF',async t=>{
+ const key=await generateKeyPair('ES256');const server=await startSyntheticAuthorizedMcp({verificationKey:key.publicKey});t.after(()=>server.close());
+ const received=await new Promise((resolve,reject)=>{
+  const req=httpRequest(server.url,{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream'}},res=>{
+   const chunks=[];res.on('data',chunk=>chunks.push(chunk));res.on('end',()=>{clearTimeout(timer);resolve({status:res.statusCode,connection:res.headers.connection});});
+  });
+  const timer=setTimeout(()=>{req.destroy();reject(Error('server waited for EOF'));},500);
+  req.on('error',error=>{clearTimeout(timer);reject(error);});
+  req.write('x'.repeat(8193)); // Deliberately never send EOF.
+ });
+ assert.equal(received.status,413);assert.equal(received.connection,'close');
 });
 
 test('parallel local writes cannot exceed the synthetic capacity',async t=>{
