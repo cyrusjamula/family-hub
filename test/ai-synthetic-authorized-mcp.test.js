@@ -33,6 +33,12 @@ test('loopback MCP enforces synthetic per-member token and room boundaries',asyn
  assert.equal((await call('synthetic_family_write',{choice:'park-b',member:'synthetic-owner'},writer)).status,400);
  assert.equal((await call('synthetic_family_read',{},child,{origin:'https://attacker.example.test'})).status,403);
  assert.equal((await call('synthetic_family_read',{},child,{'mcp-name':'synthetic_owner_read'})).status,400);
+ const encoded=`=?base64?${Buffer.from('synthetic_family_read').toString('base64')}?=`;
+ assert.deepEqual(await value(await call('synthetic_family_read',{},child,{'mcp-name':encoded})),{ok:true,synthetic:true,version:1,option:'park-a'});
+ assert.deepEqual(await value(await call('synthetic_family_read',{},null,{'mcp-name':encoded})),{ok:false,error:'unauthorized'});
+ const other=`=?base64?${Buffer.from('synthetic_owner_read').toString('base64')}?=`;
+ assert.equal((await call('synthetic_family_read',{},child,{'mcp-name':other})).status,400);
+ assert.equal((await call('synthetic_family_read',{},child,{'mcp-name':encoded.replace('?=','!')})).status,400);
  assert.equal((await value(await call('synthetic_family_read'))).version,1);
 });
 

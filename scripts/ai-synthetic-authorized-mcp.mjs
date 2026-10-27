@@ -8,6 +8,7 @@ const prefix='io.modelcontextprotocol/';
 const info={name:'synthetic-authorized-mcp',version:'0.1.0'};
 const object=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 const exact=(x,keys)=>object(x)&&Object.keys(x).length===keys.length&&keys.every(k=>Object.hasOwn(x,k));
+const matchingName=(header,name)=>header===name||header===`=?base64?${Buffer.from(name,'utf8').toString('base64')}?=`;
 const methods={
  synthetic_family_read:{operation:'family_read',readOnly:true,properties:{}},
  synthetic_family_write:{operation:'family_write',readOnly:false,properties:{choice:{enum:['park-a','park-b']}}},
@@ -42,7 +43,7 @@ export async function startSyntheticAuthorizedMcp({verificationKey,port=0}={}){
   if(!object(meta)||meta[prefix+'protocolVersion']!==SPIKE_PROTOCOL||!object(meta[prefix+'clientCapabilities'])||req.headers['mcp-protocol-version']!==SPIKE_PROTOCOL||req.headers['mcp-method']!==rpc.method)return fail(400,id,-32602,'Invalid request metadata');
   if(rpc.method==='server/discover'&&exact(rpc.params,['_meta']))return send(200,{jsonrpc:'2.0',id,result:result({supportedVersions:[SPIKE_PROTOCOL],capabilities:{tools:{}},instructions:'Synthetic loopback only; no OAuth server or real records.'})});
   if(rpc.method==='tools/list'&&exact(rpc.params,['_meta']))return send(200,{jsonrpc:'2.0',id,result:result({tools:descriptors})});
-  if(rpc.method!=='tools/call'||!exact(rpc.params,['_meta','name','arguments'])||typeof rpc.params.name!=='string'||req.headers['mcp-name']!==rpc.params.name||!Object.hasOwn(methods,rpc.params.name))return fail(400,id,-32602,'Invalid tool call');
+  if(rpc.method!=='tools/call'||!exact(rpc.params,['_meta','name','arguments'])||typeof rpc.params.name!=='string'||!Object.hasOwn(methods,rpc.params.name)||!matchingName(req.headers['mcp-name'],rpc.params.name))return fail(400,id,-32602,'Invalid tool call');
   const method=methods[rpc.params.name],args=rpc.params.arguments;
   if(!exact(args,Object.keys(method.properties)))return fail(400,id,-32602,'Invalid tool arguments');
   const writing=method.operation==='family_write';
