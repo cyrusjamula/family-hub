@@ -31,6 +31,15 @@ export function createD1FactoryClaims(db){
    parameters(operationId,digest);
    return write(db,"UPDATE factory_claim_slot SET state='uncertain' WHERE singleton=1 AND paused=0 AND state='claimed' AND operation_id=? AND scope_digest=?",operationId,digest);
   },
+  async recordTaskIdentity(operationId,digest,taskId){
+   parameters(operationId,digest);
+   if(typeof taskId!=='string'||!operationPattern.test(taskId))throw invalid();
+   // Storage does not prove identity: a future trusted adapter must establish
+   // task-to-operation correlation before calling this method. Once recorded,
+   // the identifier cannot be replaced, even by a concurrent caller. Recording
+   // remains possible during pause so late responses do not lose evidence.
+   return write(db,"UPDATE factory_claim_slot SET external_task_id=? WHERE singleton=1 AND state IN ('claimed','uncertain') AND operation_id=? AND scope_digest=? AND external_task_id IS NULL",taskId,operationId,digest);
+  },
   async pause(){
    // Idempotent pause cannot release any active or uncertain operation.
    return write(db,'UPDATE factory_claim_slot SET paused=1 WHERE singleton=1 AND paused=0');
