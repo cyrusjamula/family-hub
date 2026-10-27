@@ -37,6 +37,9 @@ export class FactoryStore {
   this.db.prepare("UPDATE factory_runs SET state='uncertain' WHERE id=?").run(id);return true;
  });}
  abandonClaim(id){this.db.prepare("UPDATE factory_runs SET state='abandoned' WHERE id=? AND state='claimed'").run(id);}
+ // Only the dispatching process may call this before invoking the adapter.
+ // A recovered provider identity makes absence ambiguous and keeps the lock.
+ cancelBeforeInvocation(id){this.db.prepare("UPDATE factory_runs SET state='cancelled' WHERE id=? AND state='cancel_pending' AND external_id IS NULL").run(id);}
  recordStarted(id,externalId){
   if(typeof externalId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(externalId))throw Error('invalid provider run id');
   this.transaction(()=>{
