@@ -21,14 +21,15 @@ export function createMcpResourceBoundary({resource,issuer,verificationKey,resol
   async authorize(request,requiredScope){
    if(request.method!=='POST'||request.url!==resource||!allowedScopes.has(requiredScope))return {response:deny()};
    const bearer=request.headers.get('authorization')||'';
-   const match=/^Bearer ([A-Za-z0-9._~-]{1,4096})$/.exec(bearer);
+   const match=/^Bearer +([A-Za-z0-9._~-]{1,4096})$/i.exec(bearer);
    if(!match)return {response:deny()};
    try{
     const {payload,protectedHeader}=await jwtVerify(match[1],verificationKey,{issuer,audience:resource,algorithms:['ES256'],requiredClaims:['sub','exp','iat'],maxTokenAge:'10m'});
     if(protectedHeader.typ!=='at+jwt')return {response:deny()};
     if(typeof payload.sub!=='string'||!payload.sub||payload.sub.length>256||typeof payload.scope!=='string')return {response:deny()};
     const scopes=payload.scope.split(' ');
-    if(scopes.some(s=>!s||!allowedScopes.has(s))||new Set(scopes).size!==scopes.length||!scopes.includes(requiredScope))return {response:deny()};
+    if(scopes.some(s=>!s||!allowedScopes.has(s))||new Set(scopes).size!==scopes.length)return {response:deny()};
+    if(!scopes.includes(requiredScope))return {response:new Response(null,{status:403,headers:{'www-authenticate':`${challenge}, error="insufficient_scope", scope="${requiredScope}"`,'cache-control':'no-store'}})};
     // Resolve membership on every call. Token-provided roles/room names are
     // untrusted. Downstream handlers must enforce room and action permissions.
     const member=await resolveMember(payload.sub);
