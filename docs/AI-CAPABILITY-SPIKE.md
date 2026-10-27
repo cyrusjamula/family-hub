@@ -53,3 +53,9 @@ Before a real client trial, separately review an authorized way for the actual c
 
 This is still a local test harness: it has no OAuth discovery, authorization-code/PKCE, client registration, verified real member identities, durable storage or idempotent write receipts. It is not connected to the Hub, a ChatGPT client, a tunnel, Cloudflare, or a production auth server. **Do not deploy or expose it.** Passing these tests cannot establish account access, connector compatibility or live permission isolation; those require a separately reviewed integration and real-client acceptance.
 
+## Protected-resource boundary preparation
+
+`src/integrations/mcp-resource.js` provides an unmounted, reusable OAuth resource boundary: protected-resource metadata and an authentication challenge, ES256 `at+jwt` signature/type/issuer/audience/time/scope checks, and a trusted per-request membership lookup. It returns only the lookup's member identity and role, never the role asserted in a token. The host must select the required scope from server-controlled routing; task and room authorization remain the downstream handler's responsibility. Tests use ephemeral keys and fictional identities.
+
+This boundary has no route, authorization server, OAuth discovery/PKCE, membership implementation, token issuance, network listener or configured key. No provider has been selected or validated to issue compatible short-lived ES256 `at+jwt` tokens. It cannot itself authenticate a real account or provide an end-to-end MCP service. A later, separately reviewed integration must select a compatible issuer and public-key rotation strategy, implement current membership and per-operation checks, wire bounded MCP handling and durable idempotency, and verify actual ChatGPT/client behavior. Do not deploy or expose this module as a complete OAuth implementation.
+
