@@ -39,7 +39,11 @@ export class FactoryStore {
  abandonClaim(id){this.db.prepare("UPDATE factory_runs SET state='abandoned' WHERE id=? AND state='claimed'").run(id);}
  recordStarted(id,externalId){
   if(typeof externalId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(externalId))throw Error('invalid provider run id');
-  this.db.prepare("UPDATE factory_runs SET external_id=?,state=CASE WHEN cancel_requested=1 THEN 'cancel_pending' ELSE 'running' END WHERE id=? AND state IN ('uncertain','cancel_pending')").run(externalId,id);
+  this.transaction(()=>{
+   const run=this.get(id);
+   if(run?.external_id&&run.external_id!==externalId)throw Error('provider identity changed');
+   this.db.prepare("UPDATE factory_runs SET external_id=?,state=CASE WHEN cancel_requested=1 THEN 'cancel_pending' ELSE 'running' END WHERE id=? AND state IN ('uncertain','cancel_pending')").run(externalId,id);
+  });
  }
  claimCancellation(id){return this.transaction(()=>{const run=this.get(id);if(!run||run.state!=='cancel_pending'||!run.external_id||run.cancel_attempted)return false;this.db.prepare('UPDATE factory_runs SET cancel_attempted=1 WHERE id=?').run(id);return true;});}
  requestCancel(id){this.db.prepare("UPDATE factory_runs SET cancel_requested=1,state=CASE WHEN state='claimed' THEN 'cancelled' ELSE 'cancel_pending' END WHERE id=? AND state IN ('claimed','uncertain','running','review')").run(id);return this.get(id);}
