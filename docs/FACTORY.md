@@ -1,5 +1,11 @@
 # Approval-gated software factory
 
+## Shared claim storage candidate
+
+`src/factory-d1-claims.js` is an unbound D1-compatible claim primitive. The review-only SQL in `scripts/factory-d1-schema.sql` initializes one paused row; it is not a production migration. A single conditional update can claim the idle slot across processes, and an exact operation/digest transition persists uncertain state. Pausing retains the lock. Invalid input, unavailable storage and ambiguous write results fail closed. The module deliberately exposes no resume, release, provider call or HTTP endpoint: an uncertain or abandoned slot needs a separately reviewed authenticated reconciliation/recovery design.
+
+The caller must independently authenticate and verify current owner approval, scope, budget and provider readiness; possession of a claim is not authorization. No Worker binding, routes, secrets or production D1 changes are included. Local SQLite tests exercise independent connections and persistence, not Cloudflare D1 integration. Real D1 behavior, transactional failure/restart handling, safe pause/activation, and release from authenticated terminal evidence must be verified before live use.
+
 Issue #16 tracks the full factory. This PR delivers **read-only planning and trusted GitHub collection controls**, not an activated cloud-agent dispatcher.
 
 Use the scoped issue template to describe scope, acceptance checks, regression tests, file paths and dependencies. The manual Propose approved issue work workflow runs on main with read-only contents/issues/pull-request permissions. Its collector fetches scoped issues, exact owner approval comments, explicit dependency states and open PR file scopes directly from the fixed repository. It handles bounded pagination and rejects incomplete/changing file scopes. No issue body or discussion is copied into the workflow summary. An offline JSON file is only a planning/test input, never evidence of authorization to perform paid or external work.
