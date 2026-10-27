@@ -52,6 +52,10 @@ export class FactoryStore {
    if(!['running','review','failed','cancelled','not-started','unknown'].includes(state))throw Error('invalid reconciliation state');
    if(state==='unknown'||(run.state==='review'&&state==='running'))return run;
    if(state==='not-started'&&(run.external_id||!['uncertain','cancel_pending'].includes(run.state)||verifiedAbsent!==true))throw Error('absence requires unresolved start and authoritative simulation evidence');
+   // An uncorrelated terminal report is not evidence that an uncertain start
+   // ended. Keep its lock until the provider identity is established or an
+   // authoritative absence is explicitly reconciled.
+   if(['failed','cancelled'].includes(state)&&!(externalId||run.external_id))throw Error('provider run id required');
    if(['running','review'].includes(state)&&!(externalId||run.external_id))throw Error('provider run id required');
    if(state==='review'&&!(prUrl||run.pr_url))throw Error('review PR required');
    // Cancellation cannot be cleared by late/out-of-order running or review reports.

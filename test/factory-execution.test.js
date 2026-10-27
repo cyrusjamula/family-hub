@@ -50,6 +50,16 @@ test('timeout retains uncertain claim and another issue cannot start',async t=>{
  const r=await f.controller({timeoutMs:5}).dispatch(1);assert.equal(r.run.state,'uncertain');
  f.snapshot.issues.push(fixture(2));await f.controller().dispatch(2);assert.equal(f.calls.start,1);
 });
+test('uncorrelated terminal reports cannot release an uncertain or cancellation-pending claim',async t=>{
+ for(const state of ['failed','cancelled'])for(const cancel of [false,true]){
+  const f=setup(t);f.store.setPaused(false);f.adapter.start=async()=>{f.calls.start++;throw Error('lost response');};
+  const c=f.controller(),r=await c.dispatch(1);if(cancel)await c.cancel(r.run.id);
+  f.adapter.inspect=async()=>({state});const unresolved=await c.reconcile(r.run.id);
+  assert.equal(unresolved.state,cancel?'cancel_pending':'uncertain');assert.equal(f.store.active().length,1);
+  f.snapshot.issues.push(fixture(2));assert.ok((await c.dispatch(2)).blocked);assert.equal(f.calls.start,1);
+  f.adapter.inspect=async()=>({state,externalId:'mock-run'});assert.equal((await c.reconcile(r.run.id)).state,state);
+ }
+});
 test('independent connections retain one durable claim; duplicate deliveries return one run',async t=>{
  const f=setup(t);f.store.setPaused(false);const second=new FactoryStore(f.path);t.after(()=>second.close());
  await Promise.all([f.controller().dispatch(1),f.controller({store:second}).dispatch(1)]);assert.equal(f.calls.start,1);assert.equal(second.active().length,1);
