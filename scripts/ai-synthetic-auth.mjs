@@ -27,7 +27,7 @@ export function createSyntheticResource({verificationKey}={}){
      issuer:syntheticIssuer,audience:syntheticAudience,requiredClaims:['sub','exp','iat']}));
    }catch{return denied();}
    const role=Object.hasOwn(members,claims.sub)?members[claims.sub]:undefined;
-   const policy=Object.hasOwn(policies,operation)?policies[operation]:undefined;
+   const policy=typeof operation==='string'&&Object.hasOwn(policies,operation)?policies[operation]:undefined;
    if(!role||!policy||typeof claims.scope!=='string'||!claims.scope.split(' ').includes(policy.scope)||!policy.roles.includes(role))return denied();
    if(operation==='family_write'){
     if(!['park-a','park-b'].includes(choice))return {ok:false,error:'invalid-synthetic-choice'};
