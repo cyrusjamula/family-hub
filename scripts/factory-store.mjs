@@ -58,7 +58,9 @@ export class FactoryStore {
    if(prUrl!==undefined&&!/^https:\/\/github\.com\/cyrusjamula\/family-hub\/pull\/[1-9]\d*$/.test(prUrl))throw Error('invalid PR link');
    if(!['running','review','failed','cancelled','not-started','unknown'].includes(state))throw Error('invalid reconciliation state');
    if(state==='unknown'||(run.state==='review'&&state==='running'))return run;
-   if(state==='not-started'&&(run.external_id||!['uncertain','cancel_pending'].includes(run.state)||verifiedAbsent!==true))throw Error('absence requires unresolved start and authoritative simulation evidence');
+   // A response cannot simultaneously prove that no run exists and identify
+   // one. Preserve the uncertain lock on contradictory provider evidence.
+   if(state==='not-started'&&(externalId!==undefined||run.external_id||!['uncertain','cancel_pending'].includes(run.state)||verifiedAbsent!==true))throw Error('absence requires unresolved start and authoritative simulation evidence');
    // An uncorrelated terminal report is not evidence that an uncertain start
    // ended. Keep its lock until the provider identity is established or an
    // authoritative absence is explicitly reconciled.
