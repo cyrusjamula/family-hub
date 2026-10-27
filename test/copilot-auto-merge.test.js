@@ -112,3 +112,16 @@ test('a changed head while retrying does not enable auto-merge',async()=>{
  const graphql=f.github.graphql;f.github.graphql=async(q,a)=>{if(q.startsWith('mutation'))throw Object.assign(new Error('synthetic'),{errors:[{type:'UNPROCESSABLE',message:'Pull request Pull request is in unstable status'}]});return graphql(q,a);};
  await reconcilePullRequests({...f,wait:async()=>{}});assert.equal(f.calls.filter(c=>c.kind==='enable').length,0);
 });
+
+test('a review dismissed during retry resets its check and prevents auto-merge',async()=>{
+ const f=fixture({reviews:[review()]});const paginate=f.github.paginate;let reviewReads=0,mutations=0;
+ f.github.paginate=async(method,args)=>{
+  if(method===f.github.rest.pulls.listReviews&&++reviewReads===2)return [review({state:'DISMISSED'})];
+  if(method===f.github.rest.checks.listForRef&&reviewReads===2)return [{id:9,name:COPILOT_REVIEW_CHECK,app:{slug:'github-actions'}}];
+  return paginate(method,args);
+ };
+ const graphql=f.github.graphql;f.github.graphql=async(q,a)=>{if(q.startsWith('mutation')){mutations++;throw Object.assign(new Error('synthetic'),{errors:[{type:'UNPROCESSABLE',message:'Pull request Pull request is in unstable status'}]});}return graphql(q,a);};
+ await reconcilePullRequests({...f,wait:async()=>{}});
+ assert.equal(mutations,1);assert.equal(f.calls.length,2);assert.equal(f.calls[0].args.conclusion,'success');
+ assert.equal(f.calls[1].args.status,'in_progress');assert.equal(f.calls[1].args.check_run_id,9);assert.equal(f.calls[1].args.conclusion,undefined);
+});
