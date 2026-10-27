@@ -6,7 +6,7 @@ const digestPattern=/^[a-f0-9]{64}$/;
 
 export async function observeD1FactoryClaim(db){
  try{
-  const result=await db.prepare('SELECT singleton, paused, state, operation_id, scope_digest FROM factory_claim_slot WHERE singleton=1 LIMIT 2').all();
+  const result=await db.prepare('SELECT singleton, paused, state, operation_id, scope_digest FROM factory_claim_slot LIMIT 2').all();
   if(result?.success!==true||!Array.isArray(result.results)||result.results.length!==1)throw invalid();
   const row=result.results[0];
   if(!row||row.singleton!==1||(row.paused!==0&&row.paused!==1)||

@@ -39,3 +39,13 @@ test('fails closed on missing, malformed or impossible snapshots',async()=>{
  await assert.rejects(observeD1FactoryClaim({prepare(){throw Error('sensitive details');}}),error=>error.message==='Factory claim observation unavailable; preserve any existing lock');
  await assert.rejects(observeD1FactoryClaim(null),/observation unavailable/);
 });
+
+test('fails closed when a damaged table contains an extra non-singleton row',async()=>{
+ const db=new DatabaseSync(':memory:');
+ try{
+  db.exec('CREATE TABLE factory_claim_slot (singleton INTEGER, paused INTEGER, state TEXT, operation_id TEXT, scope_digest TEXT)');
+  db.prepare('INSERT INTO factory_claim_slot VALUES (?,?,?,?,?)').run(1,0,'idle',null,null);
+  db.prepare('INSERT INTO factory_claim_slot VALUES (?,?,?,?,?)').run(2,0,'claimed','synthetic_operation',digest);
+  await assert.rejects(observeD1FactoryClaim(sqlite(db)),/observation unavailable/);
+ }finally{db.close();}
+});
