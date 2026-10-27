@@ -1,0 +1,9 @@
+# Unmounted MCP task gateway prototype
+
+This module is an integration building block, not an enabled route or a supported family connection. It composes a trusted OAuth resource boundary with a trusted task backend through standard `Request` and `Response` objects. It does not start a listener, select an OAuth issuer, provision identities, configure credentials, create a tunnel or access production data. The proposal options are fictional and intentionally limited to the synthetic pilot.
+
+The gateway exposes metadata and two tools: read an assigned task and submit a versioned proposal. It selects read/write scopes from its own tool table, obtains the member from the verified resource boundary for each call, rejects unknown arguments, and passes that member separately to the backend. Request bodies are capped at 8 KiB and backend exceptions return sanitized errors. A proposal is not approval to send, book, purchase or disclose data.
+
+The injected backend is a security boundary: it must enforce current member, task and room visibility for every call, check source permissions where applicable, and atomically handle idempotency keys and version conflicts. The gateway alone cannot establish any of those properties; it must not be mounted with a backend that lacks them. The host must also implement request timeouts, authentication discovery, protected error/log handling, and exact origin and deployment controls. This module does not implement an OAuth authorization server, consent UI, PKCE, real member registration, durable receipts, or a provider connector.
+
+Local tests use generated keys, fictional member IDs and in-memory backend fakes. They demonstrate gateway dispatch and denied writes, not real account compatibility or live family access. Review the OAuth authorization-server integration, backend authorization, current provider behavior and exact costs before proposing a separately approved live synthetic trial.
