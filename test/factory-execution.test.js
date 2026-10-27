@@ -39,6 +39,14 @@ test('readiness is read again after claiming; scope edits or pause prevent start
  const c=f.controller({readSimulationSnapshot:async()=>{if(++reads===2){if(changed==='scope')f.issue.title+='edit';if(changed==='pause')f.store.setPaused(true);if(changed==='revoke')f.gates.activation=false;}return structuredClone(f.snapshot);}});
  const r=await c.dispatch(1);assert.equal(f.calls.start,0);assert.equal(r.run.state,'abandoned');}
 });
+test('pause, cancellation, and revoked gates before deferred invocation prevent start',async t=>{
+ for(const change of ['pause','cancel','budget']){
+  const f=setup(t);f.store.setPaused(false);const mark=f.store.markUncertain.bind(f.store);
+  f.store.markUncertain=id=>{const ok=mark(id);if(change==='pause')f.store.setPaused(true);if(change==='cancel')f.store.requestCancel(id);if(change==='budget')f.gates.budget=false;return ok;};
+  const result=await f.controller().dispatch(1);assert.equal(f.calls.start,0,change);
+  assert.equal(result.run.state,'cancelled',change);assert.equal(f.store.active().length,0,change);
+ }
+});
 test('uncertain is committed before start; exception and restart never automatically retry',async t=>{
  const f=setup(t);f.store.setPaused(false);f.adapter.start=async({operationId})=>{f.calls.start++;const observer=new FactoryStore(f.path);try{assert.equal(observer.get(operationId).state,'uncertain');}finally{observer.close();}throw Error('response lost');};
  const r=await f.controller().dispatch(1);assert.equal(r.run.state,'uncertain');assert.equal(f.calls.start,1);

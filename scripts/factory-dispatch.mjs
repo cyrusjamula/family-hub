@@ -55,8 +55,15 @@ export function createSimulationController({store,readSimulationSnapshot,simulat
     if(!gates()||now()>=claimed.run.deadline||!current||current.scopeDigest!==claimed.run.digest||!store.markUncertain(id)){
      store.abandonClaim(id);return {blocked:'readiness changed before start',run:store.get(id)};
     }
-    const result=await bounded(()=>simulationAdapter.start({operationId:id,issue:number,scopeDigest:current.scopeDigest,files:current.files}),timeoutMs);
-    store.recordStarted(id,result?.externalId);
+    let invoked=false;
+    const result=await bounded(()=>{
+     const run=store.get(id);
+     if(!run||run.state!=='uncertain'||run.cancel_requested||store.paused()||!gates()||now()>=run.deadline){
+      store.requestCancel(id);store.cancelBeforeInvocation(id);return;
+     }
+     invoked=true;return simulationAdapter.start({operationId:id,issue:number,scopeDigest:current.scopeDigest,files:current.files});
+    },timeoutMs);
+    if(invoked)store.recordStarted(id,result?.externalId);
    }catch{
     // Once the uncertain marker is committed, any exception/timeout may hide
     // an accepted provider run. Never release or automatically retry it.
