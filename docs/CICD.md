@@ -28,6 +28,12 @@ The existing D1 binding, AI binding, runtime settings, protected workers.dev URL
 
 Work on a branch and open a PR. Run `npm ci` and `npm run ci` before merging. The native production pipeline validates `main` again before deploying. PR-specific CI/status enforcement and branch rules must be verified separately; do not claim they exist from this document alone. A solo owner can merge without another person's approval unless a ruleset is separately configured. Application approvals for sending emails/calendar events remain mandatory regardless of deployment automation.
 
+### Auto-merge after Copilot review
+
+The `Auto-merge after Copilot review` workflow maintains a `copilot-review` check on each pull request's current head commit. Require this check from GitHub Actions in the default-branch ruleset alongside `validate`. A non-dismissed `COMMENTED` or `APPROVED` review from `copilot-pull-request-reviewer[bot]` on that exact commit passes the check and enables squash auto-merge. Drafts, new commits awaiting review, dismissed reviews and change requests remain blocked. Existing validation, CodeQL, code-quality and conversation-resolution requirements still apply; completing a Copilot review does not bypass them or count as human approval.
+
+Review events run an unprivileged notification workflow. Its completion triggers reconciliation using only trusted base/default-branch source, not PR code or downloaded artifacts. PR lifecycle events also reconcile the gate; new head commits require their own review. API errors fail visibly. The privileged workflow uses the built-in Actions token with repository-content, pull-request and check write permissions, without deployment credentials or AI calls. A manual dispatch reconciles existing open PRs after installation or recovery.
+
 Database migrations are versioned in `migrations/` but are not automatically run by the deploy command. Migrations 0001–0005 were previously applied to the existing D1 database. Migration 0006 adds identity-attempt provenance and must be reviewed/applied before deploying the alias-support change; it has not been live-applied by these code changes. Review schema changes and backup/recovery before running `npm run migrate:production`; do not apply destructive migrations implicitly. This avoids granting routine builds unnecessary D1 mutation authority. See [identity rollout](IDENTITY.md).
 
 ## Recovery and verification

@@ -1,0 +1,12 @@
+name: Observe Copilot reviews
+on:
+  pull_request_review:
+    types: [submitted, dismissed]
+permissions: {}
+jobs:
+  notify:
+    if: github.event.review.user.login == 'copilot-pull-request-reviewer[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - run: echo "Copilot review changed; the trusted auto-merge workflow will reconcile."
