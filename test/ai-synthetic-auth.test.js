@@ -13,6 +13,9 @@ test('synthetic authorization rejects forged identity, wrong audience, missing s
  const call=async(token,operation,choice)=>resource.call({authorization:`Bearer ${token}`,operation,choice});
  const child=await issue(),parent=await issue({subject:'synthetic-parent'}),owner=await issue({subject:'synthetic-owner'});
  assert.equal((await call(child,'family_read')).ok,true);
+ for(const operation of [['family_read'],['parents_read'],['owner_read'],['family_write'],{toString:()=> 'family_read'}]){
+  assert.deepEqual(await call(child,operation),{ok:false,error:'unauthorized'});
+ }
  assert.deepEqual(await call(child,'parents_read'),{ok:false,error:'unauthorized'});
  assert.deepEqual(await call(child,'owner_read'),{ok:false,error:'unauthorized'});
  assert.equal((await call(parent,'parents_read')).ok,true);

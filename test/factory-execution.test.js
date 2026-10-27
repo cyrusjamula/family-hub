@@ -108,6 +108,17 @@ test('invalid start response and failed status lookup preserve uncertain work',a
  const c=f.controller(),r=await c.dispatch(1);assert.equal(r.run.state,'uncertain');f.adapter.inspect=async()=>{throw Error('offline');};
  assert.equal((await c.reconcile(r.run.id)).state,'uncertain');await c.dispatch(1);assert.equal(f.calls.start,1);
 });
+
+test('terminal reports without an explicit matching provider ID cannot release an established run',async t=>{
+ for(const state of ['failed','cancelled'])for(const pending of [false,true]){
+  const f=setup(t);f.store.setPaused(false);const c=f.controller();const started=await c.dispatch(1);
+  if(pending)await c.cancel(started.run.id);
+  f.adapter.inspect=async()=>({state});const observed=await c.reconcile(started.run.id);
+  assert.equal(observed.state,pending?'cancel_pending':'running');assert.equal(f.store.active().length,1);
+  f.adapter.inspect=async()=>({state,externalId:'mock-run'});
+  assert.equal((await c.reconcile(started.run.id)).state,state);assert.equal(f.store.active().length,0);
+ }
+});
 test('crash before provider invocation holds the slot until explicit reconciliation handling',t=>{
  const f=setup(t);f.store.setPaused(false);const claim=f.store.claim({repository:'cyrusjamula/family-hub',issue:1,scopeDigest:'synthetic',files:['public/synthetic.js']},timestamp,10);
  const reopened=new FactoryStore(f.path);try{assert.equal(reopened.get(claim.run.id).state,'claimed');assert.equal(reopened.claim({repository:'cyrusjamula/family-hub',issue:2,scopeDigest:'other',files:['public/other.js']},timestamp+1000,10).blocked,'one-task cap');}finally{reopened.close();}
