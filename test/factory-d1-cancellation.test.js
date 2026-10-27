@@ -67,3 +67,38 @@ test('simultaneous workers set cancellation intent exactly once without losing t
  assert.deepEqual({...db.prepare('SELECT state,operation_id,cancel_requested FROM factory_claim_slot').get()},
   {state:'claimed',operation_id:'op',cancel_requested:1});
 });
+
+test('cancellation blocks the pre-start uncertain transition without releasing the slot',async t=>{
+ const db=new DatabaseSync(':memory:');t.after(()=>db.close());
+ db.exec(readFileSync(new URL('../scripts/factory-d1-schema.sql',import.meta.url),'utf8'));
+ db.exec('UPDATE factory_claim_slot SET paused=0');const claims=createD1FactoryClaims(d1(db));
+ assert.equal(await claims.claim('op',digest),true);
+ assert.equal(await claims.requestCancellation('op',digest),true);
+ assert.equal(await claims.markUncertain('op',digest),false);
+ assert.deepEqual({...db.prepare('SELECT state,operation_id,cancel_requested FROM factory_claim_slot').get()},
+  {state:'claimed',operation_id:'op',cancel_requested:1});
+ assert.equal(await claims.claim('another',digest),false);
+});
+
+test('cancellation and pre-start transition serialize without dropping intent',async t=>{
+ const dir=mkdtempSync(join(tmpdir(),'factory-cancel-start-race-')),path=join(dir,'state.sqlite');
+ const db=new DatabaseSync(path);t.after(()=>{db.close();rmSync(dir,{recursive:true,force:true});});
+ db.exec(readFileSync(new URL('../scripts/factory-d1-schema.sql',import.meta.url),'utf8'));
+ db.exec('UPDATE factory_claim_slot SET paused=0');assert.equal(await createD1FactoryClaims(d1(db)).claim('op',digest),true);
+ const {Worker}=await import('node:worker_threads');const gate=new Int32Array(new SharedArrayBuffer(4));
+ const moduleUrl=new URL('../src/factory-d1-claims.js',import.meta.url).href;
+ const code=`import {parentPort,workerData} from 'node:worker_threads';import {DatabaseSync} from 'node:sqlite';
+ import {createD1FactoryClaims} from ${JSON.stringify(moduleUrl)};
+ const db=new DatabaseSync(workerData.path);db.exec('PRAGMA busy_timeout=5000');
+ const d1={prepare:sql=>({bind:(...args)=>({run:async()=>({success:true,meta:{changes:Number(db.prepare(sql).run(...args).changes)}})})})};
+ const flag=new Int32Array(workerData.gate);parentPort.postMessage('ready');Atomics.wait(flag,0,0);
+ try{const store=createD1FactoryClaims(d1);parentPort.postMessage(await store[workerData.method]('op',workerData.digest));}finally{db.close();}`;
+ const workers=['requestCancellation','markUncertain'].map(method=>new Worker(code,{eval:true,workerData:{path,gate:gate.buffer,digest,method}}));
+ t.after(async()=>{await Promise.all(workers.map(w=>w.terminate()));});let ready=0;
+ const results=workers.map(w=>new Promise((resolve,reject)=>{let initialized=false;w.on('error',reject);w.on('message',m=>{
+  if(!initialized){if(m!=='ready')return reject(Error('worker initialization failed'));initialized=true;if(++ready===2){Atomics.store(gate,0,1);Atomics.notify(gate,0,2);}return;}resolve(m);
+ });}));
+ const [cancelled,started]=await Promise.all(results);assert.equal(cancelled,true);
+ assert.deepEqual({...db.prepare('SELECT state,operation_id,cancel_requested FROM factory_claim_slot').get()},
+  {state:started?'uncertain':'claimed',operation_id:'op',cancel_requested:1});
+});

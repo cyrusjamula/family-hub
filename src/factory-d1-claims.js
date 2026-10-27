@@ -29,7 +29,7 @@ export function createD1FactoryClaims(db){
   },
   async markUncertain(operationId,digest){
    parameters(operationId,digest);
-   return write(db,"UPDATE factory_claim_slot SET state='uncertain' WHERE singleton=1 AND paused=0 AND state='claimed' AND operation_id=? AND scope_digest=?",operationId,digest);
+   return write(db,"UPDATE factory_claim_slot SET state='uncertain' WHERE singleton=1 AND paused=0 AND state='claimed' AND cancel_requested=0 AND operation_id=? AND scope_digest=?",operationId,digest);
   },
   async recordTaskIdentity(operationId,digest,taskId){
    parameters(operationId,digest);
