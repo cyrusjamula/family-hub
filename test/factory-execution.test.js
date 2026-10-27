@@ -109,6 +109,18 @@ test('invalid start response and failed status lookup preserve uncertain work',a
  assert.equal((await c.reconcile(r.run.id)).state,'uncertain');await c.dispatch(1);assert.equal(f.calls.start,1);
 });
 
+test('contradictory absence carrying a provider ID cannot release an unknown-start lock',async t=>{
+ for(const pending of [false,true]){
+  const f=setup(t);f.store.setPaused(false);f.adapter.start=async()=>{throw Error('synthetic timeout');};
+  const c=f.controller(),started=await c.dispatch(1);
+  assert.equal(started.run.state,'uncertain');if(pending)await c.cancel(started.run.id);
+  f.adapter.inspect=async()=>({state:'not-started',verifiedAbsent:true,externalId:'provider-run'});
+  const r=await c.reconcile(started.run.id);
+  assert.equal(r.state,pending?'cancel_pending':'uncertain');assert.equal(f.store.active().length,1);
+  assert.match((await c.dispatch(1)).blocked,/already active|duplicate scope|one-task cap/);
+ }
+});
+
 test('terminal reports without an explicit matching provider ID cannot release an established run',async t=>{
  for(const state of ['failed','cancelled'])for(const pending of [false,true]){
   const f=setup(t);f.store.setPaused(false);const c=f.controller();const started=await c.dispatch(1);
