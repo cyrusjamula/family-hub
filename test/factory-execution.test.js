@@ -50,6 +50,17 @@ test('timeout retains uncertain claim and another issue cannot start',async t=>{
  const r=await f.controller({timeoutMs:5}).dispatch(1);assert.equal(r.run.state,'uncertain');
  f.snapshot.issues.push(fixture(2));await f.controller().dispatch(2);assert.equal(f.calls.start,1);
 });
+test('a late start response cannot replace an already reconciled provider identity',async t=>{
+ const f=setup(t);f.store.setPaused(false);let finishStart,notifyStart;const started=new Promise(resolve=>{notifyStart=resolve;});
+ f.adapter.start=()=>{f.calls.start++;notifyStart();return new Promise(resolve=>{finishStart=resolve;});};
+ const c=f.controller(),dispatch=c.dispatch(1);await started;
+ const id=f.store.active()[0].id;await c.cancel(id);
+ const cancelled=[];f.adapter.inspect=async()=>({state:'running',externalId:'run-A'});f.adapter.cancel=async({externalId})=>cancelled.push(externalId);
+ assert.equal((await c.reconcile(id)).external_id,'run-A');
+ finishStart({externalId:'run-B'});await dispatch;
+ const run=f.store.get(id);assert.equal(run.external_id,'run-A');assert.equal(run.state,'cancel_pending');
+ assert.deepEqual(cancelled,['run-A']);assert.equal(f.store.active().length,1);
+});
 test('uncorrelated terminal reports cannot release an uncertain or cancellation-pending claim',async t=>{
  for(const state of ['failed','cancelled'])for(const cancel of [false,true]){
   const f=setup(t);f.store.setPaused(false);f.adapter.start=async()=>{f.calls.start++;throw Error('lost response');};
