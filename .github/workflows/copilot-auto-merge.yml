@@ -1,0 +1,29 @@
+name: Auto-merge after Copilot review
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
+  workflow_run:
+    workflows: [Observe Copilot reviews]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  checks: write
+concurrency:
+  group: copilot-auto-merge
+  cancel-in-progress: false
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const {reconcilePullRequests} = await import(`${process.env.GITHUB_WORKSPACE}/scripts/copilot-auto-merge.mjs`);
+            await reconcilePullRequests({github, context, core});
