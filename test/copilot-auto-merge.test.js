@@ -91,3 +91,37 @@ test('review notifications are unprivileged and reconciliation never checks out 
  assert.match(workflow,/persist-credentials: false/);
  assert.doesNotMatch(workflow,/pull_request\.head|workflow_run\.head|download-artifact/);
 });
+
+test('transient unstable merge status retries with fresh state, and other errors surface',async()=>{
+ const unstable=()=>Object.assign(new Error('synthetic'),{errors:[{type:'UNPROCESSABLE',message:'Pull request Pull request is in unstable status'}]});
+ const f=fixture({reviews:[review()]});const graphql=f.github.graphql;let mutations=0,waits=0;
+ f.github.graphql=async(q,a)=>{if(q.startsWith('mutation')&&++mutations===1)throw unstable();return graphql(q,a);};
+ await reconcilePullRequests({...f,wait:async()=>{waits++;}});
+ assert.equal(mutations,2);assert.equal(waits,1);assert.equal(f.calls.filter(c=>c.kind==='enable').length,1);
+ const exhausted=fixture({reviews:[review()]});const query=exhausted.github.graphql;let failures=0;
+ exhausted.github.graphql=async(q,a)=>{if(q.startsWith('mutation')){failures++;throw unstable();}return query(q,a);};
+ await assert.rejects(reconcilePullRequests({...exhausted,wait:async()=>{}}));assert.equal(failures,3);
+ const rejected=fixture({reviews:[review()]});const rejectedQuery=rejected.github.graphql;
+ rejected.github.graphql=async(q,a)=>{if(q.startsWith('mutation'))throw Error('permission denied');return rejectedQuery(q,a);};
+ await assert.rejects(reconcilePullRequests({...rejected,wait:async()=>{throw Error('must not retry');}}),/permission denied/);
+});
+
+test('a changed head while retrying does not enable auto-merge',async()=>{
+ const f=fixture({reviews:[review()]});let reads=0;const get=f.github.rest.pulls.get;
+ f.github.rest.pulls.get=async(...args)=>++reads===3?{data:{...f.pr,head:{sha:'b'.repeat(40)}}}:get(...args);
+ const graphql=f.github.graphql;f.github.graphql=async(q,a)=>{if(q.startsWith('mutation'))throw Object.assign(new Error('synthetic'),{errors:[{type:'UNPROCESSABLE',message:'Pull request Pull request is in unstable status'}]});return graphql(q,a);};
+ await reconcilePullRequests({...f,wait:async()=>{}});assert.equal(f.calls.filter(c=>c.kind==='enable').length,0);
+});
+
+test('a review dismissed during retry resets its check and prevents auto-merge',async()=>{
+ const f=fixture({reviews:[review()]});const paginate=f.github.paginate;let reviewReads=0,mutations=0;
+ f.github.paginate=async(method,args)=>{
+  if(method===f.github.rest.pulls.listReviews&&++reviewReads===2)return [review({state:'DISMISSED'})];
+  if(method===f.github.rest.checks.listForRef&&reviewReads===2)return [{id:9,name:COPILOT_REVIEW_CHECK,app:{slug:'github-actions'}}];
+  return paginate(method,args);
+ };
+ const graphql=f.github.graphql;f.github.graphql=async(q,a)=>{if(q.startsWith('mutation')){mutations++;throw Object.assign(new Error('synthetic'),{errors:[{type:'UNPROCESSABLE',message:'Pull request Pull request is in unstable status'}]});}return graphql(q,a);};
+ await reconcilePullRequests({...f,wait:async()=>{}});
+ assert.equal(mutations,1);assert.equal(f.calls.length,2);assert.equal(f.calls[0].args.conclusion,'success');
+ assert.equal(f.calls[1].args.status,'in_progress');assert.equal(f.calls[1].args.check_run_id,9);assert.equal(f.calls[1].args.conclusion,undefined);
+});
