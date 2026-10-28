@@ -62,3 +62,15 @@ test('encoded MCP names work and invalid names are rejected before storage',asyn
  const wrong=makeRequest(signed,'tools/call','task_read',{taskId:'t'});wrong.headers.set('mcp-name','task_propose');
  assert.equal((await f.gateway.handle(wrong)).status,400);assert.equal(f.calls.length,1);
 });
+
+test('read-only backend advertises no writes and rejects direct writes before dispatch',async()=>{
+ const calls=[];const boundary={metadata:()=>new Response(),authorize:async(_request,scope)=>({member:{id:'fictional',role:'child'},scope})};
+ const gateway=createMcpTaskGateway({resource,boundary,backend:{read:async(m,a)=>{calls.push([m,a]);return {ok:true};}}});
+ const list=await gateway.handle(makeRequest('synthetic','tools/list'));
+ assert.deepEqual((await list.json()).result.tools.map(t=>t.name),['task_read']);
+ const attempt=await gateway.handle(makeRequest('synthetic','tools/call','task_propose',{taskId:'a',requestId:'r',expectedVersion:1,option:'park-a'}));
+ assert.equal(attempt.status,400);assert.equal(calls.length,0);
+ const read=await gateway.handle(makeRequest('synthetic','tools/call','task_read',{taskId:'a'}));
+ assert.equal((await read.json()).result.structuredContent.ok,true);assert.equal(calls.length,1);
+ assert.throws(()=>createMcpTaskGateway({resource,boundary,backend:{read:async()=>({ok:true}),propose:null}}));
+});
