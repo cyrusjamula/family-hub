@@ -156,7 +156,7 @@ test('uncertain cancellation needs explicit absence proof; unavailable gates rev
  assert.equal((await broken.reconcile(started.run.id)).state,'cancel_pending');assert.equal(g.store.active().length,1);
 });
 test('new controller and audit controls cannot authorize their own modification',async t=>{
- for(const file of ['scripts/factory-dispatch.mjs','scripts/factory-store.mjs','scripts/factory-input-audit.mjs','scripts/factory-github-tasks.mjs','scripts/factory-d1-schema.sql','src/factory-d1-claims.js','scripts/']){
+ for(const file of ['scripts/factory-dispatch.mjs','scripts/factory-store.mjs','scripts/factory-input-audit.mjs','scripts/factory-github-tasks.mjs','scripts/factory-d1-schema.sql','src/factory-d1-claims.js','src/factory-d1-observe.js','scripts/']){
   const f=setup(t);f.store.setPaused(false);f.issue.body=f.issue.body.replace('public/synthetic.js',file);f.issue.comments[0].body='/factory approve '+issueScopeDigest(f.issue);
   await f.controller().dispatch(1);assert.equal(f.calls.start,0,file);
  }
@@ -211,3 +211,4 @@ test('correlated PR scope and immutable identity cannot expand approval',async t
  f.snapshot.active=[{issue:999,relatedIssues:[1],files:['public/unapproved.js'],state:'review'}];
  assert.equal((await c.reconcile(started.run.id)).state,'cancel_pending');assert.equal(f.calls.cancel,1);
 });
+
