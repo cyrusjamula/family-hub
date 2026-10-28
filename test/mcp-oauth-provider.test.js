@@ -90,3 +90,14 @@ test('disabled official provider does not touch identity, KV or network',async()
  const provider=createFamilyOAuthProvider({authenticate(){throw Error('must not run');}});
  assert.equal((await provider.fetch(new Request(resource))).status,503);assert.equal(await provider.validateToken(resource,'synthetic',{}),null);
 });
+test('corrupted consent binding and storage failure fail closed without private diagnostics',async t=>{
+ const f=await fixture(t),page=await f.begin();
+ const key=[...f.env.OAUTH_KV.rows.keys()].find(k=>k.startsWith('family-consent:'));
+ const original=JSON.parse(f.env.OAUTH_KV.rows.get(key).value);
+ for(const expiry of [undefined,'not-a-time',Date.now()+600000]){
+  await f.env.OAUTH_KV.put(key,JSON.stringify({...original,expiresAt:expiry}));
+  assert.equal((await f.approve(page)).status,403);
+ }
+ f.env.OAUTH_KV.get=async()=>{throw Error('private synthetic KV diagnostic');};
+ const unavailable=await f.approve(page);assert.equal(unavailable.status,503);assert.equal((await unavailable.json()).error,'OAuth service unavailable');
+});

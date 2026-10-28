@@ -69,7 +69,7 @@ export function createFamilyOAuthProvider({enabled=false,issuer,resource,authent
   if(request.headers.get('origin')!==authUrl.origin)return json('Origin rejected',403);
   let form;try{form=await consentForm(request);}catch{return json('Invalid consent form',400);}
   const key=await bindingKey(form.handle),saved=await env.OAUTH_KV.get(key,'json');
-  if(!saved||saved.memberId!==member.id||saved.expiresAt<=Date.now()||saved.clientId!==await client(member.id,saved.externalClientId))return json('Consent expired or account/connection changed',403);
+  if(!saved||saved.memberId!==member.id||!Number.isSafeInteger(saved.expiresAt)||saved.expiresAt<=Date.now()||saved.expiresAt>Date.now()+300000||saved.clientId!==await client(member.id,saved.externalClientId))return json('Consent expired or account/connection changed',403);
   if(form.decision==='deny'){
    const denied=await oauth.denyConsent(request,form.handle);await env.OAUTH_KV.delete(key);return new Response(null,{status:302,headers:denied.headers});
   }
