@@ -7,7 +7,7 @@ const taskId=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{1
 const roles=new Set(['owner','parent','child']);
 const unavailable=()=>({ok:false,error:'Task unavailable'});
 export function createMcpTaskGrants({db,resolveOwner,resolveMember,resolveClient,verifyApproval,now=()=>Math.floor(Date.now()/1000)}={}){
- if(!db||typeof db.prepare!=='function'||typeof resolveOwner!=='function'||typeof resolveMember!=='function'||typeof resolveClient!=='function'||typeof verifyApproval!=='function'||typeof now!=='function')throw Error('Invalid grant configuration');
+ if(!db||typeof db.prepare!=='function'||typeof db.batch!=='function'||typeof resolveOwner!=='function'||typeof resolveMember!=='function'||typeof resolveClient!=='function'||typeof verifyApproval!=='function'||typeof now!=='function')throw Error('Invalid grant configuration');
  async function owner(session){
   const actor=await resolveOwner(session);
   if(!actor||!id.test(actor.id||'')||actor.role!=='owner')return false;
@@ -33,10 +33,18 @@ export function createMcpTaskGrants({db,resolveOwner,resolveMember,resolveClient
     if(!person||await resolveClient(person.id,clientId)!==true)return false;
     const details=Object.freeze({grantId,task,version,memberId:person.id,clientId,expiresAt});
     if(await verifyApproval(session,actor,details,confirmation)!==true)return false;
-    const result=await db.prepare(`INSERT OR IGNORE INTO mcp_task_read_grants(id,task_id,task_version,member_id,client_id,approved_by,expires_at)
+    // D1 batch is transactional: retire only an expired matching grant, retain
+    // historical IDs for replay protection, and insert the fresh consent together.
+    const retired=db.prepare(`UPDATE mcp_task_read_grants SET revoked=1
+     WHERE task_id=? AND task_version=? AND member_id=? AND client_id=? AND revoked=0 AND expires_at<=?
+     AND NOT EXISTS (SELECT 1 FROM mcp_task_read_grants WHERE id=?)
+     AND EXISTS (SELECT 1 FROM tasks WHERE id=? AND version=? AND assignee_id=? AND (room='family' OR (room='parents' AND ? IN ('owner','parent'))))`)
+     .bind(task,version,person.id,clientId,time,grantId,task,version,person.id,person.role);
+    const inserted=db.prepare(`INSERT OR IGNORE INTO mcp_task_read_grants(id,task_id,task_version,member_id,client_id,approved_by,expires_at)
      SELECT ?,id,version,?,?,?,? FROM tasks WHERE id=? AND version=? AND assignee_id=? AND (room='family' OR (room='parents' AND ? IN ('owner','parent')))`)
-     .bind(grantId,person.id,clientId,actor,expiresAt,task,version,person.id,person.role).run();
-    return result?.success===true&&result?.meta?.changes===1;
+     .bind(grantId,person.id,clientId,actor,expiresAt,task,version,person.id,person.role);
+    const result=await db.batch([retired,inserted]);
+    return result?.length===2&&result.every(r=>r?.success===true)&&result[1]?.meta?.changes===1;
    }catch{return false;}
   },
   async revoke(session,grantId){
