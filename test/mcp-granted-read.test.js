@@ -71,7 +71,11 @@ test('changed audience, task version, expiration and owner revocation deny exist
  f.sql.exec("UPDATE tasks SET room='family',version=2");assert.equal((await call(f,token)).ok,false);
  f.sql.exec('UPDATE tasks SET version=1');assert.equal((await call(f,token)).ok,true);
  f.expire();assert.equal((await call(f,token)).ok,false);
- await f.grants.revoke('verified-owner','grant-1');assert.equal((await call(f,token)).ok,false);
+ const renewal={grantId:'grant-2',task,version:1,memberId:'child',clientId:'client-a',expiresAt:1200};
+ assert.equal(await f.grants.approve('verified-owner',{...renewal,confirmation:JSON.stringify(renewal)}),true);
+ assert.equal((await call(f,token)).ok,true);
+ assert.equal(await f.grants.revoke('verified-owner','grant-2'),true);
+ assert.equal((await call(f,token)).ok,false);
 });
 test('client disconnected between token verification and storage read is denied',async t=>{
  const f=await fixture(t),token=await f.sign();f.raceDisconnect();
