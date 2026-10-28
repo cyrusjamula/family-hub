@@ -54,6 +54,19 @@ export async function reconcilePullRequests({github,context,core,wait=ms=>new Pr
   }`,{id:pr.node_id});
      break;
     }catch(error){
+     // Clean PRs can be ineligible for auto-merge registration. Never turn
+     // this response into a direct merge or abort independent PR processing.
+     const clean=Array.isArray(error?.errors)&&error.errors.length===1&&
+      error.errors[0]?.type==='UNPROCESSABLE'&&error.errors[0]?.message==='Pull request Pull request is in clean status';
+     if(clean){
+      const {data:current}=await github.rest.pulls.get({...repo,pull_number:pr.number});
+      if(current.state==='open'&&!current.draft&&current.head.sha===pr.head.sha){
+       core.warning(`PR #${pr.number}: GitHub reports clean status and declined auto-merge. Owner merge action is required; no merge was attempted.`);
+      }else{
+       core.info(`PR #${pr.number}: changed after clean-status response; no merge was attempted.`);
+      }
+      changedWhileWaiting=true;break;
+     }
      // GitHub can temporarily reject a PR while checks change status. Only
      // retry this specific response, and fail visibly if it never settles.
      const unstable=Array.isArray(error?.errors)&&error.errors.length===1&&
