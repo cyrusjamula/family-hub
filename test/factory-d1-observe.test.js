@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {observeD1FactoryClaim} from '../src/factory-d1-observe.js';
 
 const digest='a'.repeat(64);
-const row={singleton:1,paused:1,state:'idle',operation_id:null,scope_digest:null,external_task_id:null};
+const row={singleton:1,paused:1,state:'idle',operation_id:null,scope_digest:null,external_task_id:null,cancel_requested:0};
 const fake=result=>({prepare:()=>({all:async()=>result})});
 const sqlite=db=>({prepare:sql=>({all:async()=>({success:true,results:db.prepare(sql).all()})})});
 
