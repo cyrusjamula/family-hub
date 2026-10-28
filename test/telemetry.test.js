@@ -25,6 +25,12 @@ test('unknown paths, methods and malformed release values never become raw telem
  const event=diagnosticMetadata(new Request('https://hub.test/private/SYNTHETIC_RECORD_ID?email=PRIVATE_EMAIL',{method:'PATCH'}),{TELEMETRY_RELEASE:'SYNTHETIC_SECRET'},{id:crypto.randomUUID(),status:400,duration:-4});
  assert.equal(event.route,'/other');assert.equal(event.method,'OTHER');assert.equal(event.release,releaseFor({TELEMETRY_RELEASE:'SYNTHETIC_SECRET'}));assert.equal(event.duration_ms,0);assert.equal(JSON.stringify(event).includes('SYNTHETIC_RECORD_ID'),false);
 });
+test('feedback recovery has a canonical telemetry route without leaking issue queries or body',()=>{
+ const req=new Request('https://hub.test/api/feedback/reconcile?private=SYNTHETIC_SECRET',{method:'POST',body:JSON.stringify({issueNumber:73,private:'PRIVATE_INTENT'})});
+ const event=diagnosticMetadata(req,{}, {id:crypto.randomUUID(),status:422,duration:1});
+ assert.equal(event.route,'/api/feedback/reconcile');assert.equal(event.method,'POST');
+ for(const privateText of ['SYNTHETIC_SECRET','PRIVATE_INTENT','issueNumber'])assert.equal(JSON.stringify(event).includes(privateText),false);
+});
 test('structured provider failures without error strings show the reference and preserve result fields',async()=>{
  const {sql,env,ctx,drain}=fixture();const response=await instrumentRequest(new Request('https://hub.test/api/push/test'),env,ctx,async()=>Response.json({accepted:false,status:401},{status:502}));
  const body=await response.json(),id=response.headers.get('x-request-id');assert.equal(response.status,502);assert.equal(body.accepted,false);assert.equal(body.status,401);assert.equal(body.requestId,id);assert.match(body.error,/Request failed/);assert.ok(body.error.includes(id));await drain();sql.close();

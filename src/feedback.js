@@ -2,6 +2,7 @@ import {releaseFor} from './release.js';
 import {seal,open} from './vault.js';
 import {member} from './policy.js';
 import {digest} from './actions.js';
+import {verifyPublishedFeedback} from './feedback-recovery.js';
 
 const REPO='cyrusjamula/family-hub';
 const HUB='https://jamula-family-coordinator.cyrus-7cd.workers.dev/';
@@ -91,6 +92,19 @@ export async function feedbackAPI(request,env,user,send=fetch){
   }
   if(!uuid.test(body.id))return json({error:'Invalid report ID'},400);
   const row=await env.DB.prepare('SELECT * FROM feedback WHERE id=?').bind(body.id).first();if(!row)return json({error:'Report unavailable'},404);
+  if(path==='/api/feedback/reconcile'){
+   if(body.confirmExistingIssue!==true||!Number.isSafeInteger(body.issueNumber)||body.issueNumber<1)return json({error:'Confirm the existing GitHub issue number'},400);
+   const existingURL='https://github.com/'+REPO+'/issues/'+body.issueNumber;
+   if(row.state==='published')return row.issue_url===existingURL?json({state:'published',issueUrl:existingURL}):json({error:'Report already linked to another issue'},409);
+   if(row.state!=='uncertain'||!row.public_payload)return json({error:'Only an uncertain publication can be reconciled'},409);
+   if(!env.GITHUB_FEEDBACK_TOKEN)return json({error:'GitHub feedback connection is not configured'},503);
+   const approved=await open(env,row.public_payload,'feedback-public:'+row.id);
+   let issueUrl;try{issueUrl=await verifyPublishedFeedback(body.issueNumber,approved,env.GITHUB_FEEDBACK_TOKEN,send);}catch{return json({error:'Existing issue could not be verified. Nothing was resent; keep this report for review.'},422);}
+   const saved=await env.DB.prepare("UPDATE feedback SET state='published',issue_url=? WHERE id=? AND state='uncertain' AND public_payload=? AND issue_url IS NULL RETURNING id").bind(issueUrl,row.id,row.public_payload).first();
+   if(saved)return json({state:'published',issueUrl});
+   const current=await env.DB.prepare('SELECT state,issue_url FROM feedback WHERE id=?').bind(row.id).first();
+   return current?.state==='published'&&current.issue_url===issueUrl?json({state:'published',issueUrl}):json({error:'Report changed during verification. Nothing was resent.'},409);
+  }
   if(path==='/api/feedback/reject'){
    const rejected=await env.DB.prepare("UPDATE feedback SET state='rejected' WHERE id=? AND state='pending' RETURNING id").bind(row.id).first();return rejected?json({state:'rejected'}):json({error:'Only pending reports can be rejected'},409);
   }
