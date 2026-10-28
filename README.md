@@ -37,7 +37,7 @@ documents describe their implementation-time state.
 | --- | --- | --- |
 | Restricted web app and role/room checks | Available behind Cloudflare Access; signed identity verified server-side | Owner checks passed; actual other-member sign-in/role checks remain [#5](https://github.com/cyrusjamula/family-hub/issues/5) |
 | Family/Parents chat and coordinator AI | Web path available; bounded Workers AI calls and persisted room history | This is the Hub's coordinator, not calls into members' ChatGPT/Copilot chats; no paid fallback |
-| Tasks, provenance, versions, owner decisions and results | Implemented web workflow; assistant selection prepares a manual handoff | AI-native task read/write and actual family adoption remain [#34/#36/#37](https://github.com/cyrusjamula/family-hub/issues/34) |
+| Tasks, provenance, versions, owner decisions and results | Implemented web workflow; assistant selection prepares a manual handoff | AI-native task read/write and actual family adoption remain [#34](https://github.com/cyrusjamula/family-hub/issues/34), [#36](https://github.com/cyrusjamula/family-hub/issues/36), [#37](https://github.com/cyrusjamula/family-hub/issues/37) |
 | Google connection | Owner-only connection; approved-root metadata and existing Family calendar reads previously verified | No general inbox reading, Drive editing or sharing administration; calendar permission cleanup and long-term renewal remain [#10](https://github.com/cyrusjamula/family-hub/issues/10), [#9](https://github.com/cyrusjamula/family-hub/issues/9) |
 | Calendar/email actions | Owner-only exact-payload approval and one-shot execution controls | Preparing or approving a task sends nothing; each external action needs its own approval; no booking/purchase endpoint |
 | Private records | Encrypted owner-only import and per-question AI consent implemented | Harmless-document live acceptance remains [#8](https://github.com/cyrusjamula/family-hub/issues/8); do not use sensitive records as test data |
@@ -138,6 +138,12 @@ Advance independent engineering in parallel. Do not raise live concurrency, clos
 goal trackers, or claim adoption merely because code merged or CI passed.
 
 ## Install and validate locally
+
+This is developer setup for the existing project, not a turnkey new production
+installation. A separate installation needs an owner-reviewed plan for Access and
+member identity, a separate database/schema, secrets, provider permissions and
+validated activation. Do not reuse this family’s resource identifiers or account
+mappings, or provision production infrastructure just to run the tests.
 
 ```sh
 git clone https://github.com/cyrusjamula/family-hub.git
