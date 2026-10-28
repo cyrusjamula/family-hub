@@ -39,8 +39,9 @@ export function createMcpTaskGateway({resource,boundary,backend}={}){
  let url;try{url=new URL(resource);}catch{throw Error('Invalid MCP gateway configuration');}
  if(url.protocol!=='https:'||url.username||url.password||url.pathname!=='/mcp'||url.href!==resource||url.search||url.hash||
     !boundary||typeof boundary.metadata!=='function'||typeof boundary.authorize!=='function'||
-    !backend||typeof backend.read!=='function'||typeof backend.propose!=='function')throw Error('Invalid MCP gateway configuration');
+    !backend||typeof backend.read!=='function'||(backend.propose!==undefined&&typeof backend.propose!=='function'))throw Error('Invalid MCP gateway configuration');
  const metadata=url.origin+'/.well-known/oauth-protected-resource/mcp';
+ const writable=typeof backend.propose==='function';
  return Object.freeze({async handle(request){
   if(request.url===metadata&&request.method==='GET')return boundary.metadata();
   if(request.url!==resource)return error(null,-32600,'Not found',404);
@@ -57,7 +58,7 @@ export function createMcpTaskGateway({resource,boundary,backend}={}){
   if(discovery){if(!exact(rpc.params,['_meta']))return error(id,-32602,'Invalid parameters');spec={scope:'tasks:read'};}
   else{
    if(rpc.method!=='tools/call'||!exact(rpc.params,['_meta','name','arguments'])||typeof rpc.params.name!=='string'||
-      !Object.hasOwn(methods,rpc.params.name)||!headerMatches(request.headers.get('mcp-name'),rpc.params.name))return error(id,-32602,'Invalid tool');
+      !Object.hasOwn(methods,rpc.params.name)||(!writable&&rpc.params.name==='task_propose')||!headerMatches(request.headers.get('mcp-name'),rpc.params.name))return error(id,-32602,'Invalid tool');
    spec=methods[rpc.params.name];const args=rpc.params.arguments;
    if(!exact(args,spec.keys)||typeof args.taskId!=='string'||!requestId.test(args.taskId)||
       (spec.scope==='tasks:write'&&(!requestId.test(args.requestId||'')||typeof args.requestId!=='string'||
@@ -67,7 +68,7 @@ export function createMcpTaskGateway({resource,boundary,backend}={}){
   if(authorization?.response)return authorization.response;
   if(!authorization?.member||typeof authorization.member.id!=='string'||!['owner','parent','child'].includes(authorization.member.role)||authorization.scope!==spec.scope)return error(id,-32603,'Authorization unavailable',503);
   if(rpc.method==='server/discover')return json({jsonrpc:'2.0',id,result:result({supportedVersions:[protocol],capabilities:{tools:{}},instructions:'Task proposals require separate approval for external actions.'})});
-  if(rpc.method==='tools/list')return json({jsonrpc:'2.0',id,result:result({tools})});
+  if(rpc.method==='tools/list')return json({jsonrpc:'2.0',id,result:result({tools:writable?tools:tools.filter(tool=>tool.name==='task_read')})});
   try{
    // Backend must perform current per-task audience checks and atomic replay/
    // version handling; verified identity is passed separately from arguments.
