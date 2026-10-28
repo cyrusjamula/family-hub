@@ -115,7 +115,7 @@ async function listFeedback(){
 async function showFeedbackReport(id){
  const row=await feedbackRequest('/report?id='+encodeURIComponent(id));feedbackSelected=row;clearPublicPreview();
  feedbackEl('feedback-triage').open=true;feedbackEl('feedback-report').hidden=false;feedbackEl('feedback-report-title').textContent=row.title;
- const details=feedbackEl('feedback-report-details');details.textContent=[row.reporter+' · '+row.state,row.details,'Context: '+row.context,'Related request reference: '+(row.relatedRequestId||'none'),'Hub release: '+(row.release||'unknown'),'Public first-name permission: '+(row.includeName?'yes':'no')].join('\n\n');
+ const details=feedbackEl('feedback-report-details');details.textContent=['Feedback ID: '+row.id,row.reporter+' · '+row.state,row.details,'Context: '+row.context,'Related request reference: '+(row.relatedRequestId||'none'),'Hub release: '+(row.release||'unknown'),'Public first-name permission: '+(row.includeName?'yes':'no')].join('\n\n');
  if(typeof row.issueUrl==='string'&&/^https:\/\/github\.com\/cyrusjamula\/family-hub\/issues\/[1-9]\d*$/.test(row.issueUrl)){const a=document.createElement('a');a.href=row.issueUrl;a.textContent='Open GitHub issue';a.target='_blank';a.rel='noopener noreferrer';details.append(document.createTextNode('\n'),a);}
  feedbackEl('feedback-report-image').hidden=!row.hasScreenshot;feedbackEl('feedback-report-image').removeAttribute('src');
  if(row.hasScreenshot)feedbackEl('feedback-report-image').src='/api/feedback/image?id='+encodeURIComponent(id);

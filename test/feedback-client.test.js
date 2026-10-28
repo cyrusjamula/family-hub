@@ -79,6 +79,7 @@ test('only owner uncertain reports offer read-only recovery and preserve the sel
  });
  await c.hooks.openFeedback();await c.hooks.showFeedbackReport('synthetic-id');
  assert.equal(c.elements['feedback-recovery'].hidden,false);assert.equal(c.elements['feedback-owner-review'].hidden,true);
+ assert.match(c.elements['feedback-report-details'].textContent,/Feedback ID: synthetic-id/);
  c.elements['feedback-existing-issue'].value='73';await c.elements['feedback-reconcile'].onclick();
  assert.equal(recovered,true);assert.equal(c.requests.some(r=>r.url.endsWith('/publish')),false);assert.equal(c.elements['feedback-recovery'].hidden,true);
  assert.match(c.elements['feedback-status'].textContent,/No issue was created or resent/);
