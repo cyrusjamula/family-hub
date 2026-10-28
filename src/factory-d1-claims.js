@@ -29,7 +29,7 @@ export function createD1FactoryClaims(db){
   },
   async markUncertain(operationId,digest){
    parameters(operationId,digest);
-   return write(db,"UPDATE factory_claim_slot SET state='uncertain' WHERE singleton=1 AND paused=0 AND state='claimed' AND operation_id=? AND scope_digest=?",operationId,digest);
+   return write(db,"UPDATE factory_claim_slot SET state='uncertain' WHERE singleton=1 AND paused=0 AND state='claimed' AND cancel_requested=0 AND operation_id=? AND scope_digest=?",operationId,digest);
   },
   async recordTaskIdentity(operationId,digest,taskId){
    parameters(operationId,digest);
@@ -39,6 +39,12 @@ export function createD1FactoryClaims(db){
    // the identifier cannot be replaced, even by a concurrent caller. Recording
    // remains possible during pause so late responses do not lose evidence.
    return write(db,"UPDATE factory_claim_slot SET external_task_id=? WHERE singleton=1 AND state IN ('claimed','uncertain') AND operation_id=? AND scope_digest=? AND external_task_id IS NULL",taskId,operationId,digest);
+  },
+  async requestCancellation(operationId,digest){
+   parameters(operationId,digest);
+   // Intent survives pause, uncertainty, delayed identity and worker restart.
+   // A false result or ambiguous write never authorizes cancellation or retry.
+   return write(db,"UPDATE factory_claim_slot SET cancel_requested=1 WHERE singleton=1 AND state IN ('claimed','uncertain') AND operation_id=? AND scope_digest=? AND cancel_requested=0",operationId,digest);
   },
   async pause(){
    // Idempotent pause cannot release any active or uncertain operation.

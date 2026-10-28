@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {observeD1FactoryClaim} from '../src/factory-d1-observe.js';
 
 const digest='a'.repeat(64);
-const row={singleton:1,paused:1,state:'idle',operation_id:null,scope_digest:null};
+const row={singleton:1,paused:1,state:'idle',operation_id:null,scope_digest:null,external_task_id:null};
 const fake=result=>({prepare:()=>({all:async()=>result})});
 const sqlite=db=>({prepare:sql=>({all:async()=>({success:true,results:db.prepare(sql).all()})})});
 
@@ -43,9 +43,40 @@ test('fails closed on missing, malformed or impossible snapshots',async()=>{
 test('fails closed when a damaged table contains an extra non-singleton row',async()=>{
  const db=new DatabaseSync(':memory:');
  try{
-  db.exec('CREATE TABLE factory_claim_slot (singleton INTEGER, paused INTEGER, state TEXT, operation_id TEXT, scope_digest TEXT)');
-  db.prepare('INSERT INTO factory_claim_slot VALUES (?,?,?,?,?)').run(1,0,'idle',null,null);
-  db.prepare('INSERT INTO factory_claim_slot VALUES (?,?,?,?,?)').run(2,0,'claimed','synthetic_operation',digest);
+  db.exec('CREATE TABLE factory_claim_slot (singleton INTEGER, paused INTEGER, state TEXT, operation_id TEXT, scope_digest TEXT, external_task_id TEXT)');
+  db.prepare('INSERT INTO factory_claim_slot VALUES (?,?,?,?,?,?)').run(1,0,'idle',null,null,null);
+  db.prepare('INSERT INTO factory_claim_slot VALUES (?,?,?,?,?,?)').run(2,0,'claimed','synthetic_operation',digest,null);
   await assert.rejects(observeD1FactoryClaim(sqlite(db)),/observation unavailable/);
+ }finally{db.close();}
+});
+
+
+test('rejects malformed task identities and idle identities without modifying persisted rows',async()=>{
+ const db=new DatabaseSync(':memory:');
+ try{
+  db.exec('CREATE TABLE factory_claim_slot (singleton INTEGER, paused INTEGER, state TEXT, operation_id TEXT, scope_digest TEXT, external_task_id TEXT)');
+  for(const [state,taskId] of [['idle','task_1'],['claimed','bad space'],['uncertain',''],['claimed','x'.repeat(129)]]){
+   db.exec('DELETE FROM factory_claim_slot');
+   db.prepare('INSERT INTO factory_claim_slot VALUES (1,0,?,?,?,?)').run(state,state==='idle'?null:'operation',state==='idle'?null:digest,taskId);
+   const before=db.prepare('SELECT * FROM factory_claim_slot').get();
+   await assert.rejects(observeD1FactoryClaim(sqlite(db)),/observation unavailable/);
+   assert.deepEqual(db.prepare('SELECT * FROM factory_claim_slot').get(),before);
+  }
+  for(const state of ['claimed','uncertain'])for(const taskId of [null,'task_1','x'.repeat(128)]){
+   db.exec('DELETE FROM factory_claim_slot');
+   db.prepare('INSERT INTO factory_claim_slot VALUES (1,0,?,?,?,?)').run(state,'operation',digest,taskId);
+   assert.equal((await observeD1FactoryClaim(sqlite(db))).state,state);
+  }
+ }finally{db.close();}
+});
+
+test('fails closed when the external task identity column or result field is missing',async()=>{
+ const db=new DatabaseSync(':memory:');
+ try{
+  db.exec("CREATE TABLE factory_claim_slot (singleton INTEGER, paused INTEGER, state TEXT, operation_id TEXT, scope_digest TEXT); INSERT INTO factory_claim_slot VALUES (1,0,'idle',NULL,NULL)");
+  await assert.rejects(observeD1FactoryClaim(sqlite(db)),/observation unavailable/);
+  const {external_task_id,...missing}=row;
+  await assert.rejects(observeD1FactoryClaim(fake({success:true,results:[missing]})),/observation unavailable/);
+  await assert.rejects(observeD1FactoryClaim(fake({success:true,results:[{...missing,state:'claimed',operation_id:'operation',scope_digest:digest}]})),/observation unavailable/);
  }finally{db.close();}
 });

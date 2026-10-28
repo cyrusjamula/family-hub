@@ -6,8 +6,9 @@ CREATE TABLE IF NOT EXISTS factory_claim_slot (
   operation_id TEXT,
   scope_digest TEXT,
   external_task_id TEXT,
+  cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK(cancel_requested IN (0, 1)),
   state TEXT NOT NULL DEFAULT 'idle' CHECK(state IN ('idle', 'claimed', 'uncertain')),
-  CHECK((state = 'idle' AND operation_id IS NULL AND scope_digest IS NULL AND external_task_id IS NULL)
+  CHECK((state = 'idle' AND operation_id IS NULL AND scope_digest IS NULL AND external_task_id IS NULL AND cancel_requested = 0)
     OR (state <> 'idle' AND operation_id IS NOT NULL AND scope_digest IS NOT NULL))
 );
 INSERT OR IGNORE INTO factory_claim_slot(singleton) VALUES (1);
