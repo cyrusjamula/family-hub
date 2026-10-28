@@ -17,21 +17,21 @@ test('observes persisted states across independently reopened SQLite connections
  let db=new DatabaseSync(path);
  try{
   db.exec(readFileSync(new URL('../scripts/factory-d1-schema.sql',import.meta.url),'utf8'));
-  assert.deepEqual(await observeD1FactoryClaim(sqlite(db)),{paused:true,state:'idle',operationId:null,scopeDigest:null});
+  assert.deepEqual(await observeD1FactoryClaim(sqlite(db)),{paused:true,state:'idle',operationId:null,scopeDigest:null,externalTaskId:null,cancelRequested:false});
   db.prepare("UPDATE factory_claim_slot SET paused=0,state='claimed',operation_id=?,scope_digest=?").run('synthetic_operation',digest);
   db.close();
   db=new DatabaseSync(path);
-  assert.deepEqual(await observeD1FactoryClaim(sqlite(db)),{paused:false,state:'claimed',operationId:'synthetic_operation',scopeDigest:digest});
+  assert.deepEqual(await observeD1FactoryClaim(sqlite(db)),{paused:false,state:'claimed',operationId:'synthetic_operation',scopeDigest:digest,externalTaskId:null,cancelRequested:false});
   db.exec("UPDATE factory_claim_slot SET paused=1,state='uncertain'");
   const before=db.prepare('SELECT * FROM factory_claim_slot').get();
-  assert.deepEqual(await observeD1FactoryClaim(sqlite(db)),{paused:true,state:'uncertain',operationId:'synthetic_operation',scopeDigest:digest});
+  assert.deepEqual(await observeD1FactoryClaim(sqlite(db)),{paused:true,state:'uncertain',operationId:'synthetic_operation',scopeDigest:digest,externalTaskId:null,cancelRequested:false});
   assert.deepEqual(db.prepare('SELECT * FROM factory_claim_slot').get(),before);
  }finally{db.close();rmSync(dir,{recursive:true,force:true});}
 });
 
 test('fails closed on missing, malformed or impossible snapshots',async()=>{
  const invalid=[undefined,{success:false,results:[row]},{success:true,results:[]},{success:true,results:[row,row]},
-  ...[{...row,singleton:2},{...row,paused:2},{...row,state:'unknown'},
+  ...[{...row,singleton:2},{...row,paused:2},{...row,cancel_requested:2},{...row,cancel_requested:1},{...row,state:'unknown'},
    {...row,operation_id:'unexpected'}, {...row,state:'claimed'},
    {...row,state:'uncertain',operation_id:'bad space',scope_digest:digest},
    {...row,state:'claimed',operation_id:'valid',scope_digest:'bad'}].map(value=>({success:true,results:[value]}))];
@@ -43,9 +43,9 @@ test('fails closed on missing, malformed or impossible snapshots',async()=>{
 test('fails closed when a damaged table contains an extra non-singleton row',async()=>{
  const db=new DatabaseSync(':memory:');
  try{
-  db.exec('CREATE TABLE factory_claim_slot (singleton INTEGER, paused INTEGER, state TEXT, operation_id TEXT, scope_digest TEXT, external_task_id TEXT)');
-  db.prepare('INSERT INTO factory_claim_slot VALUES (?,?,?,?,?,?)').run(1,0,'idle',null,null,null);
-  db.prepare('INSERT INTO factory_claim_slot VALUES (?,?,?,?,?,?)').run(2,0,'claimed','synthetic_operation',digest,null);
+  db.exec('CREATE TABLE factory_claim_slot (singleton INTEGER, paused INTEGER, state TEXT, operation_id TEXT, scope_digest TEXT, external_task_id TEXT, cancel_requested INTEGER)');
+  db.prepare('INSERT INTO factory_claim_slot VALUES (?,?,?,?,?,?,?)').run(1,0,'idle',null,null,null,0);
+  db.prepare('INSERT INTO factory_claim_slot VALUES (?,?,?,?,?,?,?)').run(2,0,'claimed','synthetic_operation',digest,null,0);
   await assert.rejects(observeD1FactoryClaim(sqlite(db)),/observation unavailable/);
  }finally{db.close();}
 });
@@ -54,17 +54,17 @@ test('fails closed when a damaged table contains an extra non-singleton row',asy
 test('rejects malformed task identities and idle identities without modifying persisted rows',async()=>{
  const db=new DatabaseSync(':memory:');
  try{
-  db.exec('CREATE TABLE factory_claim_slot (singleton INTEGER, paused INTEGER, state TEXT, operation_id TEXT, scope_digest TEXT, external_task_id TEXT)');
+  db.exec('CREATE TABLE factory_claim_slot (singleton INTEGER, paused INTEGER, state TEXT, operation_id TEXT, scope_digest TEXT, external_task_id TEXT, cancel_requested INTEGER)');
   for(const [state,taskId] of [['idle','task_1'],['claimed','bad space'],['uncertain',''],['claimed','x'.repeat(129)]]){
    db.exec('DELETE FROM factory_claim_slot');
-   db.prepare('INSERT INTO factory_claim_slot VALUES (1,0,?,?,?,?)').run(state,state==='idle'?null:'operation',state==='idle'?null:digest,taskId);
+   db.prepare('INSERT INTO factory_claim_slot VALUES (1,0,?,?,?,?,0)').run(state,state==='idle'?null:'operation',state==='idle'?null:digest,taskId);
    const before=db.prepare('SELECT * FROM factory_claim_slot').get();
    await assert.rejects(observeD1FactoryClaim(sqlite(db)),/observation unavailable/);
    assert.deepEqual(db.prepare('SELECT * FROM factory_claim_slot').get(),before);
   }
   for(const state of ['claimed','uncertain'])for(const taskId of [null,'task_1','x'.repeat(128)]){
    db.exec('DELETE FROM factory_claim_slot');
-   db.prepare('INSERT INTO factory_claim_slot VALUES (1,0,?,?,?,?)').run(state,'operation',digest,taskId);
+   db.prepare('INSERT INTO factory_claim_slot VALUES (1,0,?,?,?,?,0)').run(state,'operation',digest,taskId);
    assert.equal((await observeD1FactoryClaim(sqlite(db))).state,state);
   }
  }finally{db.close();}

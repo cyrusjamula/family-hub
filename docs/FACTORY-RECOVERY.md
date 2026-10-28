@@ -1,0 +1,13 @@
+# Shared terminal recovery integration
+
+`scripts/factory-recovery.mjs` composes the existing fixed-repository GitHub task reader with D1 claim storage. It is disabled by default and is not mounted in the Worker, a CLI or a workflow. Disabled construction needs no credential and performs no storage or provider access.
+
+A trusted host must explicitly enable the component, supply an appropriately scoped user credential and authenticate the current owner for the exact operation and scope digest through `authorizeRecovery`. This callback is required again after the provider read. It must not trust request text, reviewer comments or a client-supplied role. This library does not implement that host authentication or configure a credential.
+
+Recovery first pauses the shared slot. A valid active snapshot must contain the exact requested operation/scope and an already-persisted task UUID. Missing identity, unknown-start ambiguity, malformed storage, nonterminal/contradictory provider responses, failed reads or revoked authorization retain the lock. The real bounded task reader checks task/repository identity and complete terminal sessions. A conditional SQL update clears only that same state, operation, scope, task and cancellation intent. Concurrent or changed snapshots cannot release one another's work. Storage failures return only a generic blocked result.
+
+Successful terminal recovery leaves the factory **paused** and dispatch disabled. It does not approve another run, merge or deployment, establish user acceptance, or remove scope locks held by open PRs. A future authenticated dispatch host must recheck current approval, budget, source boundaries and active PR scopes before any new claim. A recovered coding slot is not proof that a PR is reviewed or its fix accepted.
+
+There is no start or cancellation call, automatic retry, resume operation, production route, schema migration or activation in this increment. A cancellation intent is not evidence that the provider stopped: recovery still requires terminal task and session evidence. A provider response that never established an immutable task identity cannot be automatically released.
+
+Synthetic integration tests use the actual reader with controlled HTTP responses and local SQLite storage. They cover disabled behavior, one successful terminal recovery, rejected identities and authorization, nonterminal/contradictory/failed reads, authorization revocation during inspection, cancellation races, concurrent recovery and ambiguous writes. These are not verification of Cloudflare D1 behavior, live GitHub provider access or cancellation. A separately reviewed runtime binding, current owner authentication and bounded live acceptance remain required before activation.
