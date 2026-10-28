@@ -37,8 +37,8 @@ function fixture({reviews=[],draft=false,autoMerge=false,existing=false,changed=
   }
  };
  const context={repo:{owner:'synthetic',repo:'synthetic'},eventName:'pull_request_target',payload:{pull_request:pr}};
- const core={info:()=>{}};
- return {github,context,core,calls,pr};
+ const logs=[];const core={info:message=>logs.push({kind:'info',message}),warning:message=>logs.push({kind:'warning',message})};
+ return {github,context,core,calls,pr,logs};
 }
 const review=(overrides={})=>({id:1,user:{login:'copilot-pull-request-reviewer[bot]',type:'Bot'},state:'COMMENTED',commit_id:'a'.repeat(40),...overrides});
 
@@ -124,4 +124,58 @@ test('a review dismissed during retry resets its check and prevents auto-merge',
  await reconcilePullRequests({...f,wait:async()=>{}});
  assert.equal(mutations,1);assert.equal(f.calls.length,2);assert.equal(f.calls[0].args.conclusion,'success');
  assert.equal(f.calls[1].args.status,'in_progress');assert.equal(f.calls[1].args.check_run_id,9);assert.equal(f.calls[1].args.conclusion,undefined);
+});
+
+const cleanError=()=>Object.assign(Error('synthetic clean rejection'),{errors:[{type:'UNPROCESSABLE',message:'Pull request Pull request is in clean status'}]});
+
+test('a clean-status rejection requires owner action and cannot stop a later PR',async()=>{
+ const f=fixture({reviews:[review()]});f.context.eventName='workflow_run';
+ const second={...f.pr,number:2,node_id:'synthetic-second',head:{sha:'b'.repeat(40)}};
+ const originalPaginate=f.github.paginate;
+ f.github.paginate=async(method,args)=>{
+  if(method===f.github.rest.pulls.list)return [f.pr,second];
+  if(method===f.github.rest.pulls.listReviews)return [review({commit_id:args.pull_number===2?second.head.sha:f.pr.head.sha})];
+  if(method===f.github.rest.checks.listForRef)return [];
+  return originalPaginate(method,args);
+ };
+ const reads=[];f.github.rest.pulls.get=async args=>{reads.push(args.pull_number);return {data:args.pull_number===2?second:f.pr};};
+ const mutations=[];
+ f.github.graphql=async(query,args)=>{
+  if(query.startsWith('query'))return {node:{autoMergeRequest:null}};
+  assert.match(query,/enablePullRequestAutoMerge/);assert.doesNotMatch(query,/mergePullRequest/);
+  mutations.push(args.id);if(args.id===f.pr.node_id)throw cleanError();
+  f.calls.push({kind:'enable'});return {};
+ };
+ await reconcilePullRequests({...f,wait:async()=>assert.fail('clean rejection must not retry')});
+ assert.deepEqual(mutations,[f.pr.node_id,second.node_id]);
+ assert.equal(reads.filter(n=>n===1).length,3,'rereads clean PR before reporting owner action');
+ assert.equal(f.calls.filter(c=>c.kind==='enable').length,1);
+ assert.equal(f.logs.filter(l=>l.kind==='warning').length,1);
+ assert.match(f.logs.find(l=>l.kind==='warning').message,/PR #1:.*Owner merge action is required/);
+ assert.equal(f.logs.some(l=>/PR #1: squash auto-merge enabled/.test(l.message)),false);
+ assert.equal(f.logs.some(l=>/PR #2: squash auto-merge enabled/.test(l.message)),true);
+});
+
+test('clean rejection after head/state changes never asks for a stale merge',async()=>{
+ for(const change of [pr=>({...pr,state:'closed'}),pr=>({...pr,draft:true}),pr=>({...pr,head:{sha:'c'.repeat(40)}})]){
+  const f=fixture({reviews:[review()]});let reads=0;f.github.rest.pulls.get=async()=>({data:++reads===3?change(f.pr):f.pr});
+  const graphql=f.github.graphql;f.github.graphql=async(q,a)=>{if(q.startsWith('mutation'))throw cleanError();return graphql(q,a);};
+  await reconcilePullRequests(f);
+  assert.equal(f.logs.some(l=>l.kind==='warning'),false);
+  assert.equal(f.logs.some(l=>/changed after clean-status/.test(l.message)),true);
+  assert.equal(f.calls.some(c=>c.kind==='enable'),false);
+ }
+});
+
+test('ambiguous and unrelated clean-like errors remain visible failures',async()=>{
+ for(const errors of [
+  [{type:'FORBIDDEN',message:'Pull request Pull request is in clean status'}],
+  [{type:'UNPROCESSABLE',message:'different clean status error'}],
+  [...cleanError().errors,{type:'FORBIDDEN',message:'permission denied'}]
+ ]){
+  const f=fixture({reviews:[review()]});const graphql=f.github.graphql;
+  f.github.graphql=async(q,a)=>{if(q.startsWith('mutation'))throw Object.assign(Error('synthetic failure'),{errors});return graphql(q,a);};
+  await assert.rejects(reconcilePullRequests(f),/synthetic failure/);
+  assert.equal(f.logs.some(l=>l.kind==='warning'),false);
+ }
 });
