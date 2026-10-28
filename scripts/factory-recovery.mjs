@@ -11,10 +11,10 @@ const blocked=()=>Object.freeze({released:false,dispatchEnabled:false,state:'blo
 // Trusted-host integration only. No route, CLI, deployment or provider mutation.
 // authorizeRecovery must authenticate the current owner and exact operation/scope;
 // request text and provider metadata are never authority to recover a claim.
-export function createFactoryRecovery({enabled=false,db,token,send,authorizeRecovery}={}){
+export function createFactoryRecovery({enabled=false,db,token,send,authorizeRecovery,verifyTaskCorrelation}={}){
  if(typeof enabled!=='boolean')throw Error('Invalid recovery configuration');
  if(!enabled)return Object.freeze({reconcile:async()=>blocked()});
- if(typeof authorizeRecovery!=='function')throw Error('Invalid recovery configuration');
+ if(typeof authorizeRecovery!=='function'||typeof verifyTaskCorrelation!=='function')throw Error('Invalid recovery configuration');
  const claims=createD1FactoryClaims(db),reader=createGitHubTaskReader({token,send});
  return Object.freeze({async reconcile(session,{operationId,scopeDigest}={}){
   try{
@@ -27,12 +27,14 @@ export function createFactoryRecovery({enabled=false,db,token,send,authorizeReco
    const row=await observeD1FactoryClaim(db);
    if(!row.paused||row.state==='idle'||row.operationId!==operationId||row.scopeDigest!==scopeDigest||
       typeof row.externalTaskId!=='string'||!taskId.test(row.externalTaskId))return blocked();
+   const correlation=Object.freeze({...request,taskId:row.externalTaskId});
+   if(await verifyTaskCorrelation(correlation)!==true)return blocked();
    const task=await reader.inspect(row.externalTaskId);
    if(task.id!==row.externalTaskId||task.terminal!==true||!terminal.has(task.state)||
       !task.sessions.length||task.sessions.some(s=>s.terminal!==true||!terminal.has(s.state)))return blocked();
    // Recheck authentication after the external read; revoked approval cannot
    // release storage. The conditional write rejects changed identity or intent.
-   if(await authorizeRecovery(session,request)!==true)return blocked();
+   if(await authorizeRecovery(session,request)!==true||await verifyTaskCorrelation(correlation)!==true)return blocked();
    const result=await db.prepare(`UPDATE factory_claim_slot SET state='idle',operation_id=NULL,scope_digest=NULL,external_task_id=NULL,cancel_requested=0
     WHERE singleton=1 AND paused=1 AND state=? AND operation_id=? AND scope_digest=? AND external_task_id=? AND cancel_requested=?`)
     .bind(row.state,operationId,scopeDigest,row.externalTaskId,row.cancelRequested?1:0).run();

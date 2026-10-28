@@ -17,7 +17,7 @@ function fixture(t){
  let state='completed',sessionState='completed';
  const send=async(url,options)=>{calls.push({url,options});return Response.json({id:taskId,state,repository:{id:1431589772},url:'https://api.github.com/agents/repos/cyrusjamula/family-hub/tasks/'+taskId,
   session_count:1,sessions:[{id:'synthetic-session',task_id:taskId,repository:{id:1431589772},state:sessionState}]});};
- const config={enabled:true,db,token:'synthetic-token',send,authorizeRecovery:async(session,request)=>session==='owner'&&request.operationId===operationId&&request.scopeDigest===scopeDigest};
+ const config={enabled:true,db,token:'synthetic-token',send,verifyTaskCorrelation:async x=>x.operationId===operationId&&x.scopeDigest===scopeDigest&&x.taskId===taskId,authorizeRecovery:async(session,request)=>session==='owner'&&request.operationId===operationId&&request.scopeDigest===scopeDigest};
  return {sql,db,calls,config,setState(a,b=a){state=a;sessionState=b;},row:()=>({...sql.prepare('SELECT * FROM factory_claim_slot').get()})};
 }
 
@@ -88,4 +88,13 @@ test('storage write ambiguity never reports a successful recovery',async t=>{
  const db={prepare(sql){if(sql.includes("SET state='idle'"))return {bind:()=>({run:async()=>({success:true,meta:{changes:2}})})};return base.prepare(sql);}};
  assert.equal((await createFactoryRecovery({...f.config,db}).reconcile('owner',args)).released,false);
  assert.equal(f.row().state,'uncertain');
+});
+
+test('persisted identity alone is not authoritative task-to-operation correlation',async t=>{
+ const f=fixture(t);
+ assert.equal((await createFactoryRecovery({...f.config,verifyTaskCorrelation:async()=>false}).reconcile('owner',args)).released,false);
+ assert.equal(f.calls.length,0);assert.equal(f.row().state,'uncertain');
+ let confirmations=0;
+ assert.equal((await createFactoryRecovery({...f.config,verifyTaskCorrelation:async()=>++confirmations===1}).reconcile('owner',args)).released,false);
+ assert.equal(confirmations,2);assert.equal(f.row().state,'uncertain');
 });
