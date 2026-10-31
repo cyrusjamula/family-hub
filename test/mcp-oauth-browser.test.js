@@ -6,6 +6,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createServer} from 'node:https';
 import {registerHooks} from 'node:module';
+import {DatabaseSync} from 'node:sqlite';
+import {createD1ConsentClaims} from '../src/integrations/mcp-consent-claims.js';
 
 registerHooks({resolve(specifier,context,next){if(specifier==='cloudflare:workers')return {url:'data:text/javascript,export class WorkerEntrypoint {}',shortCircuit:true};return next(specifier,context);}});
 const {createFamilyOAuthProvider}=await import('../src/integrations/mcp-oauth-provider.js');
@@ -43,7 +45,9 @@ for(const decision of ['allow','deny'])test('Chromium follows '+decision+' conse
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>{server.closeAllConnections();server.close();});
  const port=server.address().port;issuer='https://127.0.0.1:'+port+'/';const redirect='https://localhost:'+port+'/callback',resource=issuer+'mcp',registered=new Set();
- provider=createFamilyOAuthProvider({enabled:true,issuer,resource,allowDynamicRegistration:true,authenticate:async()=>({id:'synthetic-member'}),resolveMember:async id=>({id,role:'child'}),resolveRegisteredClient:async(_member,id)=>registered.has(id)?{id:'synthetic-client'}:null,grants:{async read(){throw Error('No task read expected');}}});
+ const sql=new DatabaseSync(':memory:');t.after(()=>sql.close());sql.exec(readFileSync(new URL('../scripts/mcp-consent-claim-schema.sql',import.meta.url),'utf8'));
+ const consentClaims=createD1ConsentClaims({enabled:true,db:{prepare(q){return {bind(...args){return {q,args};}};},async batch(rows){sql.exec('BEGIN');try{const results=rows.map(row=>{const r=sql.prepare(row.q).run(...row.args);return {success:true,meta:{changes:Number(r.changes)}};});sql.exec('COMMIT');return results;}catch(error){sql.exec('ROLLBACK');throw error;}}}});
+ provider=createFamilyOAuthProvider({enabled:true,issuer,resource,allowDynamicRegistration:true,consentClaims,authenticate:async()=>({id:'synthetic-member'}),resolveMember:async id=>({id,role:'child'}),resolveRegisteredClient:async(_member,id)=>registered.has(id)?{id:'synthetic-client'}:null,grants:{async read(){throw Error('No task read expected');}}});
  const registration=await provider.fetch(new Request(issuer+'oauth/register',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({client_name:'Synthetic browser client',redirect_uris:[redirect],token_endpoint_auth_method:'none',grant_types:['authorization_code'],response_types:['code']})}),env,ctx);
  assert.equal(registration.status,201);const client=(await registration.json()).client_id;registered.add(client);
  const challenge=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('a'.repeat(43)))).toString('base64url'),url=new URL(issuer+'authorize');
