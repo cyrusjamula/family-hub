@@ -97,6 +97,29 @@ test('malformed recovery acknowledgement never claims an existing issue was veri
   assert.match(c.elements['feedback-status'].textContent,/acknowledgement is invalid/);assert.equal(c.elements['feedback-recovery'].hidden,false);
  }
 });
+test('verified recovery retains its receipt and attempts both refreshes when either view fails',async()=>{
+ for(const fail of ['list','detail','both']){
+  const c=await client({autoOpen:false});let recovered=false,detailRefreshes=0,listRefreshes=0;
+  c.setIntercept(({url})=>{
+   if(url==='/api/me')return Response.json({id:'cyrus',name:'Cyrus',role:'owner'});
+   if(url.endsWith('/reconcile')){recovered=true;return Response.json({state:'published',issueUrl:'https://github.com/cyrusjamula/family-hub/issues/73'});}
+   if(url.includes('/report?id=')){
+    if(recovered){detailRefreshes++;if(fail!=='list')throw Error('detail unavailable');}
+    return Response.json({id:'synthetic-id',title:'Synthetic',details:'Safe',state:recovered?'published':'uncertain'});
+   }
+   if(recovered&&url.startsWith('/api/feedback?')){listRefreshes++;if(fail!=='detail')throw Error('list unavailable');}
+  });
+  await c.hooks.openFeedback();await c.hooks.showFeedbackReport('synthetic-id');c.elements['feedback-existing-issue'].value='73';await c.elements['feedback-reconcile'].onclick();
+  assert.equal(detailRefreshes,1,fail);assert.equal(listRefreshes,1,fail);
+  assert.match(c.elements['feedback-status'].textContent,/Existing GitHub issue verified and linked/);
+  assert.match(c.elements['feedback-status'].textContent,/Reference: synthetic-id/);
+  assert.match(c.elements['feedback-status'].textContent,/issues\/73/);
+  assert.match(c.elements['feedback-status'].textContent,/could not fully refresh/);
+  assert.equal(c.elements['feedback-recovery'].hidden,true);
+  assert.equal(c.requests.filter(r=>r.url.endsWith('/reconcile')).length,1);
+  assert.equal(c.requests.some(r=>r.url.endsWith('/publish')),false);
+ }
+});
 test('report list has working forward/back navigation with opaque encoded cursors',async()=>{
  const c=await client();const cursor='2026-10-01 10:00:00|synthetic-id';
  c.setIntercept(({url})=>url.startsWith('/api/feedback?')?Response.json({reports:[{id:'synthetic-id',reporter:'Iyanah',state:'pending',created:'synthetic'}],nextCursor:url.includes('cursor=')?null:cursor}):null);

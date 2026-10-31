@@ -166,8 +166,12 @@ feedbackRecover.onclick=()=>feedbackRun(async()=>{
  if(!id||!Number.isSafeInteger(issueNumber)||issueNumber<1)throw Error('Enter the existing issue number from GitHub');
  const result=await feedbackRequest('/reconcile',{id,issueNumber,confirmExistingIssue:true});
  if(result?.state!=='published'||result.issueUrl!=='https://github.com/cyrusjamula/family-hub/issues/'+issueNumber)throw Error('Verification acknowledgement is invalid. Check the saved report before trying again.');
- feedbackEl('feedback-status').textContent='Existing GitHub issue verified and linked. No issue was created or resent.';
- await resetFeedbackQueue();if(feedbackSelected?.id===id)await showFeedbackReport(id);
+ const receipt='Existing GitHub issue verified and linked. Reference: '+id+'. Issue: '+result.issueUrl+'. No issue was created or resent.';
+ feedbackEl('feedback-status').textContent=receipt;
+ if(feedbackSelected?.id===id){feedbackSelected={...feedbackSelected,state:'published',issueUrl:result.issueUrl};feedbackRecovery.hidden=true;}
+ const refreshes=[resetFeedbackQueue()];if(feedbackSelected?.id===id)refreshes.push(showFeedbackReport(id));
+ const refreshed=await Promise.allSettled(refreshes);
+ if(refreshed.some(r=>r.status==='rejected'))feedbackEl('feedback-status').textContent=receipt+' The report view could not fully refresh; reopen it later. Do not create another issue.';
 });
 function feedbackFromLink(){const match=window.location.hash.match(/^#feedback=([a-f0-9-]{36})$/);if(match)feedbackRun(()=>openFeedback(match[1]));}
 window.addEventListener('hashchange',feedbackFromLink);feedbackFromLink();
