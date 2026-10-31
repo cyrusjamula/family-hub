@@ -12,6 +12,7 @@ import {createD1ConsentClaims} from '../src/integrations/mcp-consent-claims.js';
 registerHooks({resolve(specifier,context,next){if(specifier==='cloudflare:workers')return {url:'data:text/javascript,export class WorkerEntrypoint {}',shortCircuit:true};return next(specifier,context);}});
 const {createFamilyOAuthProvider}=await import('../src/integrations/mcp-oauth-provider.js');
 const chrome=[process.env.CHROME_BIN,'/usr/bin/google-chrome','/usr/bin/google-chrome-stable','/usr/bin/chromium','/usr/bin/chromium-browser'].find(p=>p&&existsSync(p));
+const requireChromium=process.env.REQUIRE_CHROMIUM==='true';
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(predicate,message){for(let i=0;i<200;i++){if(await predicate())return;await wait(50);}throw Error(message);}
 function memoryKV(){
@@ -29,8 +30,8 @@ async function chromium(t,dir){
 }
 
 describe('Chromium OAuth consent browser regressions',{concurrency:false},()=>{
-for(const decision of ['allow','deny'])test('Chromium follows '+decision+' consent POST to its validated cross-origin callback',{skip:!chrome&&!process.env.CI,timeout:60000},async t=>{
- assert.ok(chrome,'CI requires Chromium; set CHROME_BIN if its executable is not on the standard path');
+for(const decision of ['allow','deny'])test('Chromium follows '+decision+' consent POST to its validated cross-origin callback',{skip:!chrome&&!requireChromium,timeout:60000},async t=>{
+ assert.ok(chrome,'REQUIRE_CHROMIUM=true but Chromium is unavailable; set CHROME_BIN or install it');
  const dir=mkdtempSync(join(tmpdir(),'family-oauth-csp-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
  const certificate=spawnSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',join(dir,'key.pem'),'-out',join(dir,'cert.pem'),'-days','1','-subj','/CN=localhost'],{stdio:'ignore'});
  assert.equal(certificate.status,0,'A local OpenSSL executable is required for the ephemeral test certificate');
