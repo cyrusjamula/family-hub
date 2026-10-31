@@ -212,3 +212,20 @@ test('correlated PR scope and immutable identity cannot expand approval',async t
  assert.equal((await c.reconcile(started.run.id)).state,'cancel_pending');assert.equal(f.calls.cancel,1);
 });
 
+test('an exact approved file cannot be treated as a parent directory in a produced PR',async t=>{
+ const f=setup(t);f.store.setPaused(false);const c=f.controller(),started=await c.dispatch(1);
+ const status={state:'review',externalId:'mock-run',prUrl:'https://github.com/cyrusjamula/family-hub/pull/999'};f.adapter.inspect=async()=>status;
+ f.snapshot.active=[{issue:999,relatedIssues:[1],files:['public/synthetic.js/extra.js'],state:'review'}];
+ const observed=await c.reconcile(started.run.id);
+ assert.equal(observed.state,'cancel_pending');assert.equal(f.calls.cancel,1);assert.equal(f.store.active().length,1);
+});
+
+test('an explicit directory scope still accepts descendants in the correlated PR',async t=>{
+ const f=setup(t);f.store.setPaused(false);f.issue.body=f.issue.body.replace('public/synthetic.js','public/');f.issue.comments[0].body='/factory approve '+issueScopeDigest(f.issue);
+ const c=f.controller(),started=await c.dispatch(1);
+ const status={state:'review',externalId:'mock-run',prUrl:'https://github.com/cyrusjamula/family-hub/pull/999'};f.adapter.inspect=async()=>status;
+ f.snapshot.active=[{issue:999,relatedIssues:[1],files:['public/synthetic.js'],state:'review'}];
+ const observed=await c.reconcile(started.run.id);
+ assert.equal(observed.state,'review');assert.equal(f.calls.cancel,0);assert.equal(f.store.active().length,1);
+});
+
