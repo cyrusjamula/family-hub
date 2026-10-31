@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test,{describe} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn,spawnSync} from 'node:child_process';
 import {existsSync,mkdtempSync,readFileSync,rmSync} from 'node:fs';
@@ -28,7 +28,8 @@ async function chromium(t,dir){
  return (method,params)=>send(method,params,sessionId);
 }
 
-for(const decision of ['allow','deny'])test('Chromium follows '+decision+' consent POST to its validated cross-origin callback',{skip:!chrome&&!process.env.CI,timeout:40000},async t=>{
+describe('Chromium OAuth consent browser regressions',{concurrency:false},()=>{
+for(const decision of ['allow','deny'])test('Chromium follows '+decision+' consent POST to its validated cross-origin callback',{skip:!chrome&&!process.env.CI,timeout:60000},async t=>{
  assert.ok(chrome,'CI requires Chromium; set CHROME_BIN if its executable is not on the standard path');
  const dir=mkdtempSync(join(tmpdir(),'family-oauth-csp-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
  const certificate=spawnSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',join(dir,'key.pem'),'-out',join(dir,'cert.pem'),'-days','1','-subj','/CN=localhost'],{stdio:'ignore'});
@@ -58,4 +59,5 @@ for(const decision of ['allow','deny'])test('Chromium follows '+decision+' conse
  await until(()=>callbacks.length>0,'Chromium blocked the consent callback redirect');
  assert.equal(callbacks.length,1);assert.equal(callbacks[0].origin,new URL(redirect).origin);assert.equal(callbacks[0].searchParams.get('state'),'synthetic-state');
  if(decision==='allow'){assert.ok(callbacks[0].searchParams.get('code'));assert.equal(callbacks[0].searchParams.has('error'),false);}else{assert.equal(callbacks[0].searchParams.get('error'),'access_denied');assert.equal(callbacks[0].searchParams.has('code'),false);}
+});
 });

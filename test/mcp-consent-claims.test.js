@@ -62,3 +62,20 @@ test('failed insertion rolls back cleanup in the same transaction',async t=>{
  await assert.rejects(claims.claim({...request('b'.repeat(64)),expiresAt:3000}),/Consent claim unavailable/);
  assert.equal(f.db.prepare('SELECT handle_digest FROM mcp_consent_claims').get().handle_digest,'a'.repeat(64));
 });
+test('a delayed replay crossing expiry cannot reclaim after another batch cleans the old row',async t=>{
+ const f=fixture(t),normal=wrap(f.db);let time=1000;
+ const initial=createD1ConsentClaims({enabled:true,db:normal,now:()=>time});
+ assert.equal(await initial.claim(request()),true);
+ time=1999;let release,entered;
+ const started=new Promise(resolve=>{entered=resolve;}),gate=new Promise(resolve=>{release=resolve;});
+ const delayedStore={prepare:normal.prepare,async batch(rows){entered();await gate;return normal.batch(rows);}};
+ const replay=createD1ConsentClaims({enabled:true,db:delayedStore,now:()=>time});
+ const pending=replay.claim(request());await started;
+ time=2000;
+ const cleanup=createD1ConsentClaims({enabled:true,db:normal,now:()=>time});
+ assert.equal(await cleanup.claim({...request('b'.repeat(64)),expiresAt:3000}),true);
+ release();
+ assert.equal(await pending,false,'a claim must not succeed after its original handle deadline');
+ assert.equal(f.db.prepare('SELECT count(*) AS n FROM mcp_consent_claims WHERE handle_digest=?').get('a'.repeat(64)).n,1);
+ assert.equal(f.db.prepare('SELECT expires_at FROM mcp_consent_claims WHERE handle_digest=?').get('a'.repeat(64)).expires_at,2000);
+});

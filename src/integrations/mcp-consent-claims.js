@@ -21,6 +21,11 @@ export function createD1ConsentClaims({enabled=false,db,now=Date.now,maxClaims=1
     ON CONFLICT(handle_digest) DO NOTHING`).bind(handleDigest,memberId,clientId,decision,expiresAt,maxClaims);
    const results=await db.batch([expired,insert]);
    if(!Array.isArray(results)||results.length!==2||results.some(r=>r?.success!==true)||![0,1].includes(results[1]?.meta?.changes))throw unavailable();
+   // The handle may expire while an adapter batch waits behind other work. An
+   // expired cleanup from another request can remove its old row before this
+   // delayed insert runs, so a successful insert alone is not authorization.
+   const completedAt=now();
+   if(!Number.isSafeInteger(completedAt)||expiresAt<=completedAt)return false;
    return results[1].meta.changes===1;
   }catch{throw unavailable();}
  }});
