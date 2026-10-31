@@ -8,8 +8,12 @@ test('synthetic authorization rejects forged identity, wrong audience, missing s
  const attacker=await generateKeyPair('ES256');
  const resource=createSyntheticResource({verificationKey:publicKey});
  const issue=async({subject='synthetic-child',issuer=syntheticIssuer,audience=syntheticAudience,
-  scope='synthetic:read',expires='5m',key=privateKey}={})=>new SignJWT({scope}).setProtectedHeader({alg:'ES256'}).setSubject(subject)
-   .setIssuer(issuer).setAudience(audience).setIssuedAt().setExpirationTime(expires).sign(key);
+  scope='synthetic:read',expires='5m',issuedAt,key=privateKey}={})=>{
+  const jwt=new SignJWT({scope}).setProtectedHeader({alg:'ES256'}).setSubject(subject)
+   .setIssuer(issuer).setAudience(audience);
+  if(issuedAt===undefined)jwt.setIssuedAt();else jwt.setIssuedAt(issuedAt);
+  return jwt.setExpirationTime(expires).sign(key);
+ };
  const call=async(token,operation,choice)=>resource.call({authorization:`Bearer ${token}`,operation,choice});
  const child=await issue(),parent=await issue({subject:'synthetic-parent'}),owner=await issue({subject:'synthetic-owner'});
  assert.equal((await call(child,'family_read')).ok,true);
@@ -26,6 +30,15 @@ test('synthetic authorization rejects forged identity, wrong audience, missing s
   await issue({expires:'-1s'}),await issue({scope:'synthetic:write'})]){
   assert.deepEqual(await call(bad,'family_read'),{ok:false,error:'unauthorized'});
  }
+ const now=Math.floor(Date.now()/1000);
+ for(const bad of [
+  await issue({expires:'15m'}),
+  await issue({issuedAt:now+60,expires:now+360})
+ ]){
+  assert.deepEqual(await call(bad,'family_read'),{ok:false,error:'unauthorized'});
+ }
+ assert.deepEqual(await call(await issue({issuedAt:now-301,expires:now-1}),'family_read'),
+  {ok:false,error:'unauthorized'});
  assert.deepEqual(await resource.call({authorization:'Bearer forged.synthetic.token',operation:'family_read'}),{ok:false,error:'unauthorized'});
  assert.deepEqual(await resource.call({authorization:'Bearer test\nInjected: x',operation:'family_read'}),{ok:false,error:'unauthorized'});
  assert.deepEqual(await call(child,'family_write','park-a'),{ok:false,error:'unauthorized'});
