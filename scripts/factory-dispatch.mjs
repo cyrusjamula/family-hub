@@ -21,7 +21,7 @@ export function createSimulationController({store,readSimulationSnapshot,simulat
   // means external work is unknown, never that there is no external work.
   planFactory(snapshot,checkedAt);
   const ownEntries=linkedPr===undefined?[]:snapshot.active.filter(entry=>entry.issue===linkedPr);
-  if(ownEntries.length>1||ownEntries.some(entry=>entry.files.some(file=>!approvedFiles.some(scope=>file===scope||file.startsWith(scope+'/')))))throw Error('linked PR scope is ambiguous or exceeds approval');
+  if(ownEntries.length>1||ownEntries.some(entry=>entry.files.some(file=>!approvedFiles.some(scope=>file===scope||(scope.endsWith('/')&&file.startsWith(scope))))))throw Error('linked PR scope is ambiguous or exceeds approval');
   // Once claimed, validate this issue independently of new candidate ordering.
   // Closed issues stay available for dependency checks; open dependencies remain
   // unknown/incomplete, and all external/local active locks still apply.
