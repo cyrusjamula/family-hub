@@ -48,13 +48,14 @@ test('official provider performs discovery, consent, PKCE exchange and granted t
  const discovery=await f.send(new Request(issuer+'.well-known/oauth-authorization-server'));assert.equal(discovery.status,200);assert.equal((await discovery.json()).token_endpoint,issuer+'oauth/token');
  const metadata=await f.send(new Request(issuer+'.well-known/oauth-protected-resource/mcp'));assert.deepEqual((await metadata.json()).scopes_supported,['tasks:read']);
  const page=await f.begin();assert.equal(page.response.status,200,page.html);assert.ok(page.html.includes('&lt;synthetic client&gt;'));assert.ok(!page.html.includes('<synthetic client>'));assert.ok(page.handle);
+ assert.equal(page.response.headers.get('content-security-policy'),"default-src 'none'; form-action 'self' https://client.example; frame-ancestors 'none'; base-uri 'none'");
  const approved=await f.approve(page);assert.equal(approved.status,302,await approved.clone().text());const callback=new URL(approved.headers.get('location'));assert.equal(callback.origin,'https://client.example');assert.equal(callback.searchParams.get('state'),'synthetic-state');
  const tokens=await f.exchange(callback.searchParams.get('code'));assert.equal(tokens.status,200,await tokens.clone().text());const token=(await tokens.json()).access_token;
  const response=await f.read(token);assert.equal(response.status,200,await response.clone().text());assert.equal((await response.json()).result.structuredContent.task.title,'Synthetic task');
  assert.equal(await f.grants.revoke('owner','grant-1'),true);assert.equal((await (await f.read(token)).json()).result.structuredContent.ok,false);
  f.disconnect();assert.equal((await f.read(token)).status,403);
 });
-test('consent is bound to browser, origin and current member; replay is denied',async t=>{
+test('consent is bound to browser, origin and current member; sequential replay is denied',async t=>{
  const f=await fixture(t),page=await f.begin();
  assert.equal((await f.approve(page,{origin:'https://evil.example'})).status,403);
  assert.notEqual((await f.approve(page,{cookie:''})).status,302);
@@ -68,7 +69,7 @@ test('wrong PKCE cannot redeem code; unknown client mapping and denied membershi
  f.registry.delete(f.client);assert.equal((await f.begin()).response.status,403);
  f.session(null);assert.equal((await f.begin()).response.status,401);
 });
-test('the installed library enforces token revocation and code single use',async t=>{
+test('the installed library enforces token revocation and denies sequential code replay',async t=>{
  const f=await fixture(t),page=await f.begin(),approved=await f.approve(page),code=new URL(approved.headers.get('location')).searchParams.get('code');
  const tokens=await f.exchange(code);assert.equal(tokens.status,200);const token=(await tokens.json()).access_token;
  assert.equal((await f.read(token)).status,200);

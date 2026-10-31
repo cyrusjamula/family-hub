@@ -23,7 +23,7 @@ export async function authenticate(request,env){
  if(!user)throw new Error('This account is not a family member');
  return user;
 }
-const auditedRoutes=new Set(['/api/tasks/create','/api/tasks/update','/api/feedback/submit','/api/feedback/preview','/api/feedback/publish','/api/feedback/reject','/api/chat','/api/propose','/api/approve','/api/actions/propose','/api/actions/execute','/api/reminders','/api/reminders/cancel','/api/push/subscribe','/api/push/disable','/api/push/test','/api/private-ai','/api/google/connect','/api/google/disconnect','/api/google/import','/api/google/callback']);
+const auditedRoutes=new Set(['/api/tasks/create','/api/tasks/update','/api/feedback/submit','/api/feedback/preview','/api/feedback/publish','/api/feedback/reject','/api/feedback/reconcile','/api/chat','/api/propose','/api/approve','/api/actions/propose','/api/actions/execute','/api/reminders','/api/reminders/cancel','/api/push/subscribe','/api/push/disable','/api/push/test','/api/private-ai','/api/google/connect','/api/google/disconnect','/api/google/import','/api/google/callback']);
 export async function auditIdentity(request,env,user){
  const url=new URL(request.url);
  if(!auditedRoutes.has(url.pathname)||!(request.method==='POST'||url.pathname==='/api/google/callback'&&request.method==='GET'))return;

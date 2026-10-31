@@ -24,6 +24,12 @@ feedbackFilterLabel.append(feedbackFilter);feedbackEl('feedback-refresh').before
 const feedbackPaging=document.createElement('div');feedbackPaging.className='row';
 for(const [id,title] of [['feedback-previous','Previous'],['feedback-next','Next']]){const button=document.createElement('button');button.id=id;button.type='button';button.textContent=title;button.hidden=true;feedbackPaging.append(button);}
 feedbackEl('feedback-list').after(feedbackPaging);
+const feedbackRecovery=document.createElement('section');feedbackRecovery.id='feedback-recovery';feedbackRecovery.hidden=true;
+const feedbackRecoveryHelp=document.createElement('p');feedbackRecoveryHelp.textContent='Publication was uncertain. Check GitHub for this report’s Feedback ID, then verify the existing issue below. This never creates or resends an issue.';
+const feedbackIssueLabel=document.createElement('label');feedbackIssueLabel.textContent='Existing GitHub issue number ';
+const feedbackIssueNumber=document.createElement('input');feedbackIssueNumber.id='feedback-existing-issue';feedbackIssueNumber.type='number';feedbackIssueNumber.min='1';feedbackIssueNumber.step='1';feedbackIssueLabel.append(feedbackIssueNumber);
+const feedbackRecover=document.createElement('button');feedbackRecover.id='feedback-reconcile';feedbackRecover.type='button';feedbackRecover.textContent='Verify and link existing issue';
+feedbackRecovery.append(feedbackRecoveryHelp,feedbackIssueLabel,feedbackRecover);feedbackEl('feedback-report').append(feedbackRecovery);
 
 let feedbackMe,feedbackId=null,feedbackContext='unspecified',feedbackDraft=null,feedbackSelected=null,feedbackPublic=null,feedbackCursor=null,feedbackNextCursor=null,feedbackCursorHistory=[],feedbackVersion=0,feedbackBusy=false,feedbackAvailable=false,feedbackPage=null,feedbackOpening=0; 
 async function feedbackRequest(route,body){
@@ -109,11 +115,12 @@ async function listFeedback(){
 async function showFeedbackReport(id){
  const row=await feedbackRequest('/report?id='+encodeURIComponent(id));feedbackSelected=row;clearPublicPreview();
  feedbackEl('feedback-triage').open=true;feedbackEl('feedback-report').hidden=false;feedbackEl('feedback-report-title').textContent=row.title;
- const details=feedbackEl('feedback-report-details');details.textContent=[row.reporter+' · '+row.state,row.details,'Context: '+row.context,'Related request reference: '+(row.relatedRequestId||'none'),'Hub release: '+(row.release||'unknown'),'Public first-name permission: '+(row.includeName?'yes':'no')].join('\n\n');
+ const details=feedbackEl('feedback-report-details');details.textContent=['Feedback ID: '+row.id,row.reporter+' · '+row.state,row.details,'Context: '+row.context,'Related request reference: '+(row.relatedRequestId||'none'),'Hub release: '+(row.release||'unknown'),'Public first-name permission: '+(row.includeName?'yes':'no')].join('\n\n');
  if(typeof row.issueUrl==='string'&&/^https:\/\/github\.com\/cyrusjamula\/family-hub\/issues\/[1-9]\d*$/.test(row.issueUrl)){const a=document.createElement('a');a.href=row.issueUrl;a.textContent='Open GitHub issue';a.target='_blank';a.rel='noopener noreferrer';details.append(document.createTextNode('\n'),a);}
  feedbackEl('feedback-report-image').hidden=!row.hasScreenshot;feedbackEl('feedback-report-image').removeAttribute('src');
  if(row.hasScreenshot)feedbackEl('feedback-report-image').src='/api/feedback/image?id='+encodeURIComponent(id);
  feedbackEl('feedback-owner-review').hidden=feedbackMe.role!=='owner'||row.state!=='pending';
+ feedbackRecovery.hidden=feedbackMe.role!=='owner'||row.state!=='uncertain';feedbackIssueNumber.value='';
  feedbackEl('feedback-public-title').value=row.title;feedbackEl('feedback-public-details').value=row.details;
 }
 feedbackEl('feedback-open').onclick=()=>feedbackRun(()=>openFeedback());
@@ -154,6 +161,18 @@ feedbackEl('feedback-publish').onclick=()=>feedbackRun(async()=>{
  clearPublicPreview();feedbackEl('feedback-status').textContent='GitHub issue created. Screenshot remains restricted.';await resetFeedbackQueue();await showFeedbackReport(feedbackSelected.id);
 });
 feedbackEl('feedback-reject').onclick=()=>feedbackRun(async()=>{await feedbackRequest('/reject',{id:feedbackSelected.id});await resetFeedbackQueue();await showFeedbackReport(feedbackSelected.id);});
+feedbackRecover.onclick=()=>feedbackRun(async()=>{
+ const id=feedbackSelected?.id,issueNumber=Number(feedbackIssueNumber.value);
+ if(!id||!Number.isSafeInteger(issueNumber)||issueNumber<1)throw Error('Enter the existing issue number from GitHub');
+ const result=await feedbackRequest('/reconcile',{id,issueNumber,confirmExistingIssue:true});
+ if(result?.state!=='published'||result.issueUrl!=='https://github.com/cyrusjamula/family-hub/issues/'+issueNumber)throw Error('Verification acknowledgement is invalid. Check the saved report before trying again.');
+ const receipt='Existing GitHub issue verified and linked. Reference: '+id+'. Issue: '+result.issueUrl+'. No issue was created or resent.';
+ feedbackEl('feedback-status').textContent=receipt;
+ if(feedbackSelected?.id===id){feedbackSelected={...feedbackSelected,state:'published',issueUrl:result.issueUrl};feedbackRecovery.hidden=true;}
+ const refreshes=[resetFeedbackQueue()];if(feedbackSelected?.id===id)refreshes.push(showFeedbackReport(id));
+ const refreshed=await Promise.allSettled(refreshes);
+ if(refreshed.some(r=>r.status==='rejected'))feedbackEl('feedback-status').textContent=receipt+' The report view could not fully refresh; reopen it later. Do not create another issue.';
+});
 function feedbackFromLink(){const match=window.location.hash.match(/^#feedback=([a-f0-9-]{36})$/);if(match)feedbackRun(()=>openFeedback(match[1]));}
 window.addEventListener('hashchange',feedbackFromLink);feedbackFromLink();
 

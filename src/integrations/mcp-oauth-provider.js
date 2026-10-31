@@ -60,9 +60,12 @@ export function createFamilyOAuthProvider({enabled=false,issuer,resource,authent
    if(parsed.scope.length!==1||parsed.scope[0]!=='tasks:read')return json('Only task read access is supported',400);
    const clientId=await client(member.id,parsed.clientId);if(!clientId)return json('Client connection is not approved',403);
    const description=await oauth.describeConsent(parsed),consent=await oauth.beginConsent(parsed);
+   // parseAuthRequest has verified the exact registered redirect URI. Chromium
+   // also applies form-action to the POST response's redirect, not only its target.
+   const callbackOrigin=new URL(parsed.redirectUri).origin;
    await env.OAUTH_KV.put(await bindingKey(consent.handle),JSON.stringify({memberId:member.id,clientId,externalClientId:parsed.clientId,expiresAt:Date.now()+300000}),{expirationTtl:300});
    const headers=new Headers(consent.headers);headers.set('content-type','text/html; charset=utf-8');headers.set('cache-control','no-store');
-   headers.set('content-security-policy',"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+   headers.set('content-security-policy',`default-src 'none'; form-action 'self' ${callbackOrigin}; frame-ancestors 'none'; base-uri 'none'`);
    return new Response(`<!doctype html><title>Approve AI task access</title><h1>Approve AI task access</h1><p>Signed-in member: ${escape(member.id)}</p><p>Client: ${escape(description.clientName)} (unverified display name)</p><p>Client ID: ${escape(description.clientId)}</p><p>Redirect destination: ${escape(description.redirectHost)}</p><p>Resource: ${escape(resource)}</p><p>Allow this client to read only tasks separately approved for it. Access tokens last up to ten minutes and the OAuth refresh grant lasts one hour; task consent may expire sooner. No proposal writes or external actions.</p><form method="post" action="${escape(issuer+'authorize')}"><input type="hidden" name="handle" value="${escape(consent.handle)}"><button name="decision" value="allow">Allow task reads</button><button name="decision" value="deny">Deny</button></form>`,{headers});
   }
   if(request.method!=='POST')return json('Method not allowed',405);

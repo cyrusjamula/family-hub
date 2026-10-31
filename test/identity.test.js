@@ -151,7 +151,7 @@ test('real JWT verification resolves aliases and denies forged, revoked, unknown
   for(const path of ['messages?room=parents','briefs?room=parents','approvals?room=parents','notifications?room=parents','google/status','google/records','actions','reminders','private-ai'])assert.equal((await worker.fetch(signedRequest(path,childToken),env)).status,403,path);
   for(const email of ['child.alias@example.test','adult.alias@example.test']){
    const jwt=await sign(email);
-   for(const path of ['actions/propose','actions/execute','reminders','reminders/cancel','private-ai','google/connect','google/import','google/disconnect','approve','feedback/preview','feedback/publish','feedback/reject']){
+   for(const path of ['actions/propose','actions/execute','reminders','reminders/cancel','private-ai','google/connect','google/import','google/disconnect','approve','feedback/preview','feedback/publish','feedback/reject','feedback/reconcile']){
     const post=new Request('https://hub.test/api/'+path,{method:'POST',headers:{'Cf-Access-Jwt-Assertion':jwt,origin:'https://hub.test','content-type':'application/json'},body:JSON.stringify({state:'approved',content:'Synthetic',confirmExactAction:true})});
     assert.equal((await worker.fetch(post,env)).status,403,email+': '+path);
    }
@@ -159,6 +159,8 @@ test('real JWT verification resolves aliases and denies forged, revoked, unknown
   // Audit failure must prevent a mutation before any AI or provider call.
   let modelCalls=0;const ai={run(){modelCalls++;return {response:'Synthetic response'};}};
   const failedEnv={...env,AI_ENABLED:'true',AI:ai,DB:{...env.DB,prepare(query){if(query.startsWith('INSERT INTO identity_audit'))throw Error('audit unavailable');return env.DB.prepare(query);}}};
+  const recovery=new Request('https://hub.test/api/feedback/reconcile',{method:'POST',headers:{'Cf-Access-Jwt-Assertion':token,origin:'https://hub.test','content-type':'application/json'},body:JSON.stringify({id:crypto.randomUUID(),issueNumber:73,confirmExistingIssue:true})});
+  assert.equal((await worker.fetch(recovery,failedEnv)).status,503,'recovery must fail before storage/provider when identity audit is unavailable');
   const post=new Request('https://hub.test/api/chat',{method:'POST',headers:{'Cf-Access-Jwt-Assertion':token,origin:'https://hub.test','content-type':'application/json'},body:JSON.stringify({content:'Synthetic'})});
   const retry=post.clone();
   assert.equal((await worker.fetch(post,failedEnv)).status,503);assert.equal(modelCalls,0);

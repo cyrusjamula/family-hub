@@ -70,6 +70,56 @@ test('opening a restricted report expands its enclosing triage panel',async()=>{
  const c=await client();c.elements['feedback-triage'].open=false;
  await c.hooks.showFeedbackReport('synthetic-id');assert.equal(c.elements['feedback-triage'].open,true);assert.equal(c.elements['feedback-report'].hidden,false);
 });
+test('only owner uncertain reports offer read-only recovery and preserve the selected report ID',async()=>{
+ const c=await client({autoOpen:false});let recovered=false;
+ c.setIntercept(({url,body})=>{
+  if(url==='/api/me')return Response.json({id:'cyrus',name:'Cyrus',role:'owner'});
+  if(url.includes('/report?id='))return Response.json({id:'synthetic-id',title:'Synthetic',details:'Safe',state:recovered?'published':'uncertain',context:'unspecified'});
+  if(url.endsWith('/reconcile')){assert.equal(body.id,'synthetic-id');assert.equal(body.issueNumber,73);assert.equal(body.confirmExistingIssue,true);recovered=true;return Response.json({state:'published',issueUrl:'https://github.com/cyrusjamula/family-hub/issues/73'});}
+ });
+ await c.hooks.openFeedback();await c.hooks.showFeedbackReport('synthetic-id');
+ assert.equal(c.elements['feedback-recovery'].hidden,false);assert.equal(c.elements['feedback-owner-review'].hidden,true);
+ assert.match(c.elements['feedback-report-details'].textContent,/Feedback ID: synthetic-id/);
+ c.elements['feedback-existing-issue'].value='73';await c.elements['feedback-reconcile'].onclick();
+ assert.equal(recovered,true);assert.equal(c.requests.some(r=>r.url.endsWith('/publish')),false);assert.equal(c.elements['feedback-recovery'].hidden,true);
+ assert.match(c.elements['feedback-status'].textContent,/No issue was created or resent/);
+ const child=await client();child.setIntercept(({url})=>url.includes('/report?id=')?Response.json({id:'synthetic-id',state:'uncertain'}):null);
+ await child.hooks.showFeedbackReport('synthetic-id');assert.equal(child.elements['feedback-recovery'].hidden,true);
+});
+test('malformed recovery acknowledgement never claims an existing issue was verified',async()=>{
+ for(const reply of [{},{state:'published',issueUrl:'https://evil.test/issues/73'},{state:'pending',issueUrl:'https://github.com/cyrusjamula/family-hub/issues/73'}]){
+  const c=await client({autoOpen:false});c.setIntercept(({url})=>{
+   if(url==='/api/me')return Response.json({id:'cyrus',name:'Cyrus',role:'owner'});
+   if(url.includes('/report?id='))return Response.json({id:'synthetic-id',title:'Synthetic',details:'Safe',state:'uncertain'});
+   if(url.endsWith('/reconcile'))return Response.json(reply);
+  });
+  await c.hooks.openFeedback();await c.hooks.showFeedbackReport('synthetic-id');c.elements['feedback-existing-issue'].value='73';await c.elements['feedback-reconcile'].onclick();
+  assert.match(c.elements['feedback-status'].textContent,/acknowledgement is invalid/);assert.equal(c.elements['feedback-recovery'].hidden,false);
+ }
+});
+test('verified recovery retains its receipt and attempts both refreshes when either view fails',async()=>{
+ for(const fail of ['list','detail','both']){
+  const c=await client({autoOpen:false});let recovered=false,detailRefreshes=0,listRefreshes=0;
+  c.setIntercept(({url})=>{
+   if(url==='/api/me')return Response.json({id:'cyrus',name:'Cyrus',role:'owner'});
+   if(url.endsWith('/reconcile')){recovered=true;return Response.json({state:'published',issueUrl:'https://github.com/cyrusjamula/family-hub/issues/73'});}
+   if(url.includes('/report?id=')){
+    if(recovered){detailRefreshes++;if(fail!=='list')throw Error('detail unavailable');}
+    return Response.json({id:'synthetic-id',title:'Synthetic',details:'Safe',state:recovered?'published':'uncertain'});
+   }
+   if(recovered&&url.startsWith('/api/feedback?')){listRefreshes++;if(fail!=='detail')throw Error('list unavailable');}
+  });
+  await c.hooks.openFeedback();await c.hooks.showFeedbackReport('synthetic-id');c.elements['feedback-existing-issue'].value='73';await c.elements['feedback-reconcile'].onclick();
+  assert.equal(detailRefreshes,1,fail);assert.equal(listRefreshes,1,fail);
+  assert.match(c.elements['feedback-status'].textContent,/Existing GitHub issue verified and linked/);
+  assert.match(c.elements['feedback-status'].textContent,/Reference: synthetic-id/);
+  assert.match(c.elements['feedback-status'].textContent,/issues\/73/);
+  assert.match(c.elements['feedback-status'].textContent,/could not fully refresh/);
+  assert.equal(c.elements['feedback-recovery'].hidden,true);
+  assert.equal(c.requests.filter(r=>r.url.endsWith('/reconcile')).length,1);
+  assert.equal(c.requests.some(r=>r.url.endsWith('/publish')),false);
+ }
+});
 test('report list has working forward/back navigation with opaque encoded cursors',async()=>{
  const c=await client();const cursor='2026-10-01 10:00:00|synthetic-id';
  c.setIntercept(({url})=>url.startsWith('/api/feedback?')?Response.json({reports:[{id:'synthetic-id',reporter:'Iyanah',state:'pending',created:'synthetic'}],nextCursor:url.includes('cursor=')?null:cursor}):null);

@@ -26,13 +26,22 @@ Enabling this constructor in a reviewed host requires:
 
 The consent page escapes all client metadata, displays the client ID, redirect
 host, resource and read-only limits, and provides Allow/Deny actions. Provider
-consent handles are browser-bound and single-use. An additional short-lived KV
+consent handles are browser-bound and consumed after submission. The pinned
+provider uses separate KV reads and deletes, so simultaneous submissions from
+the same browser can both consume a handle successfully; strict single use is
+not guaranteed. The additional binding below does not make consumption atomic.
+An additional short-lived KV
 record binds the page to its signed-in member and approved internal connection;
 switching accounts or connections before submitting is rejected. Form posts
 require the issuer's Origin and have a bounded body. Consent is not remembered
 automatically. Access tokens have a ten-minute lifetime and the OAuth refresh
 grant a fixed one-hour lifetime. The library checks the token's resource;
 the resource handler explicitly enforces `tasks:read` and current identity.
+
+The consent page's `form-action` CSP permits only its own origin and the callback
+origin obtained from the library-validated registered redirect URI. This lets
+Chromium follow both Allow and Deny POST redirects to a cross-origin callback;
+all other page restrictions remain in place.
 
 Dynamic registration is disabled unless explicitly selected by the reviewed
 host. Registration is not authorization: an unapproved client cannot reach the
@@ -46,8 +55,18 @@ PKCE, code exchange, encryption/storage, validation and revocation against an
 in-memory KV adapter, then read owner-consented task data through the MCP Fetch
 handler and actual task SQL schema in local SQLite. Only the unavailable Node
 `cloudflare:workers` base class is shimmed; the OAuth logic is not mocked. All
-identities, tasks, clients and keys are synthetic. No callback or provider is
-contacted over the network during these tests.
+identities, tasks, clients and keys are synthetic. No real provider or public
+callback is contacted during these tests.
+
+The browser regression uses an actual local Chromium process and an ephemeral
+loopback HTTPS server/certificate to submit both consent decisions and observe
+the cross-origin callbacks. It uses no family account, provider or public
+endpoint. Set `CHROME_BIN` to a local Chromium/Chrome executable if it is not on
+the standard path; GitHub's Ubuntu runner supplies Chrome. The browser checks
+are required in CI, and explicitly skipped locally when no browser is installed.
+Sequential replay tests do not prove atomicity under concurrency or real KV
+consistency. A production host must verify those properties and use an atomic
+consumption/coordination design before relying on strict single-use consent.
 
 Remaining live gates: trusted real session authentication, owner-managed client
 registration/alias directory and task-consent UI, reviewed KV/bindings/routes and

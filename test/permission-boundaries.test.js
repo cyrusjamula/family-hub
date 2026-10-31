@@ -42,7 +42,7 @@ test('signed-request permission matrix for every family role',async t=>{
    for(const id of ids.slice(1))for(const path of paths){const f=guarded();assert.equal((await worker.fetch(request(path,tokens[id]),f.env)).status,403,id+': '+path);assert.deepEqual(f.unexpected,[]);assert.equal(f.audit.length,path.startsWith('/api/google/callback')?1:0);}
   });
   await t.test('non-owner mutations deny before protected data or providers while recording only attempt provenance',async()=>{
-   const paths=['/api/google/connect','/api/google/disconnect','/api/google/import','/api/actions/propose','/api/actions/execute','/api/reminders','/api/reminders/cancel','/api/private-ai','/api/approve','/api/feedback/preview','/api/feedback/publish','/api/feedback/reject'];
+   const paths=['/api/google/connect','/api/google/disconnect','/api/google/import','/api/actions/propose','/api/actions/execute','/api/reminders','/api/reminders/cancel','/api/private-ai','/api/approve','/api/feedback/preview','/api/feedback/publish','/api/feedback/reject','/api/feedback/reconcile'];
    const body={id:crypto.randomUUID(),state:'approved',content:'PRIVATE_FIXTURE_DO_NOT_AUDIT',recordId:'synthetic',question:'PRIVATE_FIXTURE_DO_NOT_AUDIT',confirmPrivateAI:true,confirmExactAction:true,confirmPublicIssue:true};
    for(const id of ids.slice(1))for(const path of paths){const f=guarded();assert.equal((await worker.fetch(request(path,tokens[id],body),f.env)).status,403,id+': '+path);assert.deepEqual(f.unexpected,[]);assert.equal(f.audit.length,1);assert.equal(f.audit[0][1],id);assert.equal(f.audit[0][2],addresses[id]);assert.equal(f.audit[0][3],path);assert.ok(!JSON.stringify(f.audit).includes('PRIVATE_FIXTURE_DO_NOT_AUDIT'));}
   });
