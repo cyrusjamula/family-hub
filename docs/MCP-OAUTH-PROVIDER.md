@@ -23,13 +23,17 @@ Enabling this constructor in a reviewed host requires:
 - The existing owner-approved task grant service with its current membership,
   internal client connection, audience, version, expiration and revocation checks.
   OAuth consent alone does not grant access to a task.
+- A trusted `consentClaims` guard. The supplied `createD1ConsentClaims` is disabled
+  by default and uses the separate review-only schema in
+  `scripts/mcp-consent-claim-schema.sql`. No production migration or binding is
+  supplied. An enabled OAuth host must provide this guard; missing or disabled
+  claims cannot authorize a consent POST.
 
 The consent page escapes all client metadata, displays the client ID, redirect
 host, resource and read-only limits, and provides Allow/Deny actions. Provider
-consent handles are browser-bound and consumed after submission. The pinned
-provider uses separate KV reads and deletes, so simultaneous submissions from
-the same browser can both consume a handle successfully; strict single use is
-not guaranteed. The additional binding below does not make consumption atomic.
+consent handles are browser-bound. The pinned provider itself uses separate KV
+reads and deletes and does not guarantee atomic consumption. This host therefore
+adds an atomic consent claim before calling either provider consent method.
 An additional short-lived KV
 record binds the page to its signed-in member and approved internal connection;
 switching accounts or connections before submitting is rejected. Form posts
@@ -37,6 +41,35 @@ require the issuer's Origin and have a bounded body. Consent is not remembered
 automatically. Access tokens have a ten-minute lifetime and the OAuth refresh
 grant a fixed one-hour lifetime. The library checks the token's resource;
 the resource handler explicitly enforces `tasks:read` and current identity.
+
+The host also issues a random, HttpOnly, Secure, SameSite=Lax cookie for each
+consent page, retaining only its hash in the KV binding. Missing, duplicate,
+malformed or wrong-browser cookies, changed member/client identity and expired
+bindings are rejected before storage consumption. Distinct tabs have distinct
+handles/cookies. The library's own browser binding remains in force.
+
+After these checks, a single conditional D1 insert claims the handle digest for
+the verified member, internal client and Allow/Deny decision. The consumed record
+is persisted **before** the provider can return a denial or mint a code. Duplicate
+or ambiguous writes never proceed to the provider. A provider/storage failure
+after this point does not release the claim: start a fresh authorization flow,
+not a retry of the old handle. This record means consumed, not successful login.
+Only a handle digest and binding metadata are stored; no raw handle, cookie,
+authorization code or token is copied into the claim table.
+
+The store permits at most 1000 retained claims (or a smaller configured cap) and
+fails closed at capacity. Each atomic D1 batch prunes at most 100 claims whose
+host consent bindings have expired, then attempts the new insert. Unexpired
+consumed/uncertain handles are never pruned. The host rejects expired bindings
+before claiming; an expired request cannot be revived by cleanup. The guard must
+receive the original fixed `expiresAt` from the GET binding; a host must never
+extend that deadline on POST or reuse an old handle for a new flow. No release or
+production cleanup endpoint is provided. Review capacity and retention before
+activation. Local
+SQLite connections and racing worker threads verify one winner; they do not
+establish actual D1/KV consistency or availability. This guard covers only this
+host's consent endpoint. It does **not** make the SDK's code exchange, refresh,
+other KV operations or other authorization hosts globally atomic.
 
 The consent page's `form-action` CSP permits only its own origin and the callback
 origin obtained from the library-validated registered redirect URI. This lets
@@ -64,9 +97,11 @@ the cross-origin callbacks. It uses no family account, provider or public
 endpoint. Set `CHROME_BIN` to a local Chromium/Chrome executable if it is not on
 the standard path; GitHub's Ubuntu runner supplies Chrome. The browser checks
 are required in CI, and explicitly skipped locally when no browser is installed.
-Sequential replay tests do not prove atomicity under concurrency or real KV
-consistency. A production host must verify those properties and use an atomic
-consumption/coordination design before relying on strict single-use consent.
+Sequential SDK replay tests do not prove atomicity under concurrency or real KV
+consistency. The separate claim tests use independent SQLite connections and
+worker threads, while SDK integration tests cover simultaneous Allow/Deny,
+wrong-browser/client changes, failures after consumption and fresh-flow recovery.
+Real D1/KV behavior and approved client trials remain operational gates.
 
 Remaining live gates: trusted real session authentication, owner-managed client
 registration/alias directory and task-consent UI, reviewed KV/bindings/routes and

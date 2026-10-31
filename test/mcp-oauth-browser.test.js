@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test,{describe} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn,spawnSync} from 'node:child_process';
 import {existsSync,mkdtempSync,readFileSync,rmSync} from 'node:fs';
@@ -6,6 +6,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createServer} from 'node:https';
 import {registerHooks} from 'node:module';
+import {DatabaseSync} from 'node:sqlite';
+import {createD1ConsentClaims} from '../src/integrations/mcp-consent-claims.js';
 
 registerHooks({resolve(specifier,context,next){if(specifier==='cloudflare:workers')return {url:'data:text/javascript,export class WorkerEntrypoint {}',shortCircuit:true};return next(specifier,context);}});
 const {createFamilyOAuthProvider}=await import('../src/integrations/mcp-oauth-provider.js');
@@ -18,7 +20,7 @@ function memoryKV(){
 async function chromium(t,dir){
  const child=spawn(chrome,['--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--disable-background-networking','--disable-component-update','--disable-default-apps','--disable-sync','--no-first-run','--no-proxy-server','--ignore-certificate-errors','--remote-debugging-port=0','--user-data-dir='+join(dir,'browser'),'about:blank'],{stdio:['ignore','ignore','pipe']});
  t.after(()=>{child.kill('SIGKILL');});
- const endpoint=await new Promise((resolve,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('Chromium did not start')),10000);child.once('error',reject);child.once('exit',()=>reject(Error('Chromium exited before connecting')));child.stderr.on('data',chunk=>{output+=chunk;const match=/DevTools listening on (ws:\/\/[^\s]+)/.exec(output);if(match){clearTimeout(timer);resolve(match[1]);}});});
+ const endpoint=await new Promise((resolve,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('Chromium did not start')),30000);child.once('error',reject);child.once('exit',()=>reject(Error('Chromium exited before connecting')));child.stderr.on('data',chunk=>{output+=chunk;const match=/DevTools listening on (ws:\/\/[^\s]+)/.exec(output);if(match){clearTimeout(timer);resolve(match[1]);}});});
  const socket=new WebSocket(endpoint);await new Promise((resolve,reject)=>{socket.addEventListener('open',resolve,{once:true});socket.addEventListener('error',reject,{once:true});});t.after(()=>socket.close());
  let nextId=0;const pending=new Map();socket.addEventListener('message',event=>{const data=JSON.parse(event.data),entry=pending.get(data.id);if(entry){pending.delete(data.id);clearTimeout(entry.timer);data.error?entry.reject(Error('Chromium command failed')):entry.resolve(data.result);}});
  function send(method,params={},sessionId){return new Promise((resolve,reject)=>{const id=++nextId,timer=setTimeout(()=>{pending.delete(id);reject(Error('Chromium command timed out'));},5000);pending.set(id,{resolve,reject,timer});socket.send(JSON.stringify({id,method,params,...(sessionId?{sessionId}:{})}));});}
@@ -26,7 +28,8 @@ async function chromium(t,dir){
  return (method,params)=>send(method,params,sessionId);
 }
 
-for(const decision of ['allow','deny'])test('Chromium follows '+decision+' consent POST to its validated cross-origin callback',{skip:!chrome&&!process.env.CI,timeout:40000},async t=>{
+describe('Chromium OAuth consent browser regressions',{concurrency:false},()=>{
+for(const decision of ['allow','deny'])test('Chromium follows '+decision+' consent POST to its validated cross-origin callback',{skip:!chrome&&!process.env.CI,timeout:60000},async t=>{
  assert.ok(chrome,'CI requires Chromium; set CHROME_BIN if its executable is not on the standard path');
  const dir=mkdtempSync(join(tmpdir(),'family-oauth-csp-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
  const certificate=spawnSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',join(dir,'key.pem'),'-out',join(dir,'cert.pem'),'-days','1','-subj','/CN=localhost'],{stdio:'ignore'});
@@ -43,7 +46,9 @@ for(const decision of ['allow','deny'])test('Chromium follows '+decision+' conse
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>{server.closeAllConnections();server.close();});
  const port=server.address().port;issuer='https://127.0.0.1:'+port+'/';const redirect='https://localhost:'+port+'/callback',resource=issuer+'mcp',registered=new Set();
- provider=createFamilyOAuthProvider({enabled:true,issuer,resource,allowDynamicRegistration:true,authenticate:async()=>({id:'synthetic-member'}),resolveMember:async id=>({id,role:'child'}),resolveRegisteredClient:async(_member,id)=>registered.has(id)?{id:'synthetic-client'}:null,grants:{async read(){throw Error('No task read expected');}}});
+ const sql=new DatabaseSync(':memory:');t.after(()=>sql.close());sql.exec(readFileSync(new URL('../scripts/mcp-consent-claim-schema.sql',import.meta.url),'utf8'));
+ const consentClaims=createD1ConsentClaims({enabled:true,db:{prepare(q){return {bind(...args){return {q,args};}};},async batch(rows){sql.exec('BEGIN');try{const results=rows.map(row=>{const r=sql.prepare(row.q).run(...row.args);return {success:true,meta:{changes:Number(r.changes)}};});sql.exec('COMMIT');return results;}catch(error){sql.exec('ROLLBACK');throw error;}}}});
+ provider=createFamilyOAuthProvider({enabled:true,issuer,resource,allowDynamicRegistration:true,consentClaims,authenticate:async()=>({id:'synthetic-member'}),resolveMember:async id=>({id,role:'child'}),resolveRegisteredClient:async(_member,id)=>registered.has(id)?{id:'synthetic-client'}:null,grants:{async read(){throw Error('No task read expected');}}});
  const registration=await provider.fetch(new Request(issuer+'oauth/register',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({client_name:'Synthetic browser client',redirect_uris:[redirect],token_endpoint_auth_method:'none',grant_types:['authorization_code'],response_types:['code']})}),env,ctx);
  assert.equal(registration.status,201);const client=(await registration.json()).client_id;registered.add(client);
  const challenge=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('a'.repeat(43)))).toString('base64url'),url=new URL(issuer+'authorize');
@@ -54,4 +59,5 @@ for(const decision of ['allow','deny'])test('Chromium follows '+decision+' conse
  await until(()=>callbacks.length>0,'Chromium blocked the consent callback redirect');
  assert.equal(callbacks.length,1);assert.equal(callbacks[0].origin,new URL(redirect).origin);assert.equal(callbacks[0].searchParams.get('state'),'synthetic-state');
  if(decision==='allow'){assert.ok(callbacks[0].searchParams.get('code'));assert.equal(callbacks[0].searchParams.has('error'),false);}else{assert.equal(callbacks[0].searchParams.get('error'),'access_denied');assert.equal(callbacks[0].searchParams.has('code'),false);}
+});
 });

@@ -44,7 +44,7 @@ documents describe their implementation-time state.
 | Feedback and public GitHub publication | Private saving and owner-reviewed publication observed; [test #72](https://github.com/cyrusjamula/family-hub/issues/72) recorded as published | Screenshots stay restricted. Full recovery acceptance remains [#31](https://github.com/cyrusjamula/family-hub/issues/31); the recovery change in [PR #75](https://github.com/cyrusjamula/family-hub/pull/75) is not yet an accepted live feature |
 | Telemetry | Enabled; sanitized request references and restricted owner diagnostics implemented | Raw logs, private messages and screenshots are not automatically published |
 | Notifications, reminders and location | Opt-in device controls; owner notification/location observations and in-app reminders recorded | Other devices, unattended delivery and token renewal remain [#7](https://github.com/cyrusjamula/family-hub/issues/7), [#9](https://github.com/cyrusjamula/family-hub/issues/9); location is optional, not tracked in background |
-| AI-native MCP/OAuth integration | Tested, unmounted components and client/task consent building blocks | Real authorization-server setup, member/client integration and harmless account read/write proof remain; [PR #73](https://github.com/cyrusjamula/family-hub/pull/73) is an integration increment, not activation |
+| AI-native MCP/OAuth integration | Official OAuth protocol server and owner-consented task-read composition are implemented and tested, but unmounted/default-off | Real session/client configuration, reviewed storage/routes and an actual account read/write trial remain; merged code is not activation |
 | Factory execution | Read-only planning, GitHub task reads and durable claim/cancellation building blocks | Runtime authentication, provider correlation/cancellation, real durable integration and a bounded live trial remain [#40](https://github.com/cyrusjamula/family-hub/issues/40); [PR #74](https://github.com/cyrusjamula/family-hub/pull/74) is recovery groundwork |
 | PR maintenance and delivery | GitHub validation/review automation and native Cloudflare build pipeline exist | Preserve the owner's auto-merge policy and required checks; PR automation is not live factory acceptance |
 
@@ -161,6 +161,13 @@ the synthetic suite, regenerates static assets and performs a Wrangler bundle
 dry-run. It does not deploy, migrate production, call family providers or run AI.
 `npm test` runs the tests; `npm run build` regenerates assets and dry-runs the bundle.
 
+OAuth consent redirect regressions run an actual local Chrome/Chromium browser
+against ephemeral loopback HTTPS, with synthetic accounts only. Set `CHROME_BIN`
+if the executable is not at a standard path. These checks are optional locally
+when no browser is installed, but required on GitHub's Ubuntu CI runner (which
+supplies Chrome). OpenSSL creates their ephemeral test certificates. They do not
+connect a family account or public callback.
+
 For local Worker development, `npm run dev` starts Wrangler's development server.
 Do not add `--remote`, load production records or copy runtime credentials for a
 coding task. Local D1 state is separate and schema/test identity setup is required
@@ -193,6 +200,11 @@ private screenshots, raw diagnostics or database dumps.
    resolved-conversation gates. The repository's owner-configured workflow may enable
    auto-merge after a qualifying current-head review; it does not grant live-action
    approval. Agents must not independently merge, enable new auto-merge or weaken gates.
+   The visible main ruleset currently requires `validate` but does not list
+   `copilot-review`; classic branch protection could not be inspected with the
+   connected credential. [#81](https://github.com/cyrusjamula/family-hub/issues/81)
+   tracks owner verification/enforcement of the current-head review requirement.
+   A published informational check alone is not proof that merging requires it.
 6. Report **implemented → checks passed → merged → deployed → live/user accepted**
    separately. Update the issue with concise evidence and real blockers. Do not
    close an acceptance gate using only local or mocked proof.
@@ -233,7 +245,7 @@ owner authorization. A task, PR review or model statement cannot supply it.
 | --- | --- |
 | Identity and permission boundaries | [Identity](docs/IDENTITY.md), [Permissions](docs/PERMISSIONS.md) |
 | Current manual task workflow | [Tasks](docs/TASKS.md) |
-| AI client capability and future contract | [Participation](docs/AI-PARTICIPATION.md), [Capability spike](docs/AI-CAPABILITY-SPIKE.md), [Coordination contract](docs/COORDINATION-CONTRACT.md), [MCP gateway](docs/MCP-TASK-GATEWAY.md) |
+| AI client capability and future contract | [Participation](docs/AI-PARTICIPATION.md), [Capability spike](docs/AI-CAPABILITY-SPIKE.md), [Coordination contract](docs/COORDINATION-CONTRACT.md), [MCP gateway](docs/MCP-TASK-GATEWAY.md), [Granted task reads](docs/MCP-GRANTED-READ.md), [Official OAuth provider](docs/MCP-OAUTH-PROVIDER.md) |
 | Feedback and restricted diagnostics | [Feedback](docs/FEEDBACK.md), [Telemetry](docs/TELEMETRY.md) |
 | Factory planning and safety | [Factory](docs/FACTORY.md), [Provider](docs/FACTORY-PROVIDER.md), [Data boundaries](docs/FACTORY-DATA-BOUNDARIES.md), [Observation](docs/FACTORY-OBSERVATION.md), [Cancellation intent](docs/FACTORY-CANCELLATION-INTENT.md) |
 | Devices and operations | [Devices](docs/DEVICES.md), [CI/CD](docs/CICD.md) |

@@ -18,16 +18,25 @@ async function bindingKey(handle){
  const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(handle));
  return 'family-consent:'+Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,'0')).join('');
 }
+const browserCookie=digest=>'__Host-family-consent-'+digest;
+function nonceFor(request,name){
+ const cookie=request.headers.get('cookie')||'';if(cookie.length>8192)return null;
+ const matches=cookie.split(';').map(part=>part.trim()).filter(part=>part.split('=',1)[0]===name);
+ if(matches.length!==1)return null;const value=matches[0].slice(name.length+1);
+ return /^[A-Za-z0-9_-]{43}$/.test(value)?value:null;
+}
+const cookieValue=(name,value,maxAge)=>`${name}=${value}; Path=/; Max-Age=${maxAge}; Secure; HttpOnly; SameSite=Lax`;
+const newNonce=()=>btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');
 // A separate, unmounted candidate using the official OAuth implementation. It
 // does not use the custom ES256 verifier: these tokens are validated by the
 // authorization server and the library supplies the verified token context.
-export function createFamilyOAuthProvider({enabled=false,issuer,resource,authenticate,resolveMember,resolveRegisteredClient,grants,allowDynamicRegistration=false}={}){
+export function createFamilyOAuthProvider({enabled=false,issuer,resource,authenticate,resolveMember,resolveRegisteredClient,grants,consentClaims,allowDynamicRegistration=false}={}){
  if(typeof enabled!=='boolean'||typeof allowDynamicRegistration!=='boolean')throw Error('Invalid OAuth host configuration');
  if(!enabled)return Object.freeze({async fetch(){return json('AI task access is disabled',503);},async validateToken(){return null;}});
  const authUrl=new URL(issuer),resourceUrl=new URL(resource);
  if(authUrl.protocol!=='https:'||authUrl.pathname!=='/'||authUrl.href!==issuer||authUrl.username||authUrl.password||authUrl.search||authUrl.hash||
   resourceUrl.protocol!=='https:'||resourceUrl.pathname!=='/mcp'||resourceUrl.href!==resource||resourceUrl.username||resourceUrl.password||resourceUrl.search||resourceUrl.hash||
-  typeof authenticate!=='function'||typeof resolveMember!=='function'||typeof resolveRegisteredClient!=='function'||!grants||typeof grants.read!=='function')throw Error('Invalid OAuth host configuration');
+  typeof authenticate!=='function'||typeof resolveMember!=='function'||typeof resolveRegisteredClient!=='function'||!grants||typeof grants.read!=='function'||typeof consentClaims?.claim!=='function')throw Error('Invalid OAuth host configuration');
  const authorizationServer=new OAuthAuthorizationServer({issuer:issuer.slice(0,-1),resources:[resource],scopesSupported:scopes,
   accessTokenTTL:600,refreshTokenTTL:3600,...(allowDynamicRegistration?{clientRegistrationEndpoint:'/oauth/register'}:{}),onError:()=>{}});
  async function person(id){
@@ -63,8 +72,11 @@ export function createFamilyOAuthProvider({enabled=false,issuer,resource,authent
    // parseAuthRequest has verified the exact registered redirect URI. Chromium
    // also applies form-action to the POST response's redirect, not only its target.
    const callbackOrigin=new URL(parsed.redirectUri).origin;
-   await env.OAUTH_KV.put(await bindingKey(consent.handle),JSON.stringify({memberId:member.id,clientId,externalClientId:parsed.clientId,expiresAt:Date.now()+300000}),{expirationTtl:300});
+   const key=await bindingKey(consent.handle),handleDigest=key.slice('family-consent:'.length);
+   const nonce=newNonce();
+   await env.OAUTH_KV.put(key,JSON.stringify({memberId:member.id,clientId,externalClientId:parsed.clientId,browserDigest:await bindingKey(nonce),expiresAt:Date.now()+300000}),{expirationTtl:300});
    const headers=new Headers(consent.headers);headers.set('content-type','text/html; charset=utf-8');headers.set('cache-control','no-store');
+   headers.append('set-cookie',cookieValue(browserCookie(handleDigest),nonce,300));
    headers.set('content-security-policy',`default-src 'none'; form-action 'self' ${callbackOrigin}; frame-ancestors 'none'; base-uri 'none'`);
    return new Response(`<!doctype html><title>Approve AI task access</title><h1>Approve AI task access</h1><p>Signed-in member: ${escape(member.id)}</p><p>Client: ${escape(description.clientName)} (unverified display name)</p><p>Client ID: ${escape(description.clientId)}</p><p>Redirect destination: ${escape(description.redirectHost)}</p><p>Resource: ${escape(resource)}</p><p>Allow this client to read only tasks separately approved for it. Access tokens last up to ten minutes and the OAuth refresh grant lasts one hour; task consent may expire sooner. No proposal writes or external actions.</p><form method="post" action="${escape(issuer+'authorize')}"><input type="hidden" name="handle" value="${escape(consent.handle)}"><button name="decision" value="allow">Allow task reads</button><button name="decision" value="deny">Deny</button></form>`,{headers});
   }
@@ -73,13 +85,17 @@ export function createFamilyOAuthProvider({enabled=false,issuer,resource,authent
   let form;try{form=await consentForm(request);}catch{return json('Invalid consent form',400);}
   const key=await bindingKey(form.handle),saved=await env.OAUTH_KV.get(key,'json');
   if(!saved||saved.memberId!==member.id||!Number.isSafeInteger(saved.expiresAt)||saved.expiresAt<=Date.now()||saved.expiresAt>Date.now()+300000||saved.clientId!==await client(member.id,saved.externalClientId))return json('Consent expired or account/connection changed',403);
+  const handleDigest=key.slice('family-consent:'.length),nonce=nonceFor(request,browserCookie(handleDigest));
+  if(!nonce||await bindingKey(nonce)!==saved.browserDigest)return json('Consent browser binding rejected',403);
+  if(await consentClaims.claim({handleDigest,memberId:member.id,clientId:saved.clientId,decision:form.decision,expiresAt:saved.expiresAt})!==true)return json('Consent already used or unavailable; start a new authorization request',409);
   if(form.decision==='deny'){
-   const denied=await oauth.denyConsent(request,form.handle);await env.OAUTH_KV.delete(key);return new Response(null,{status:302,headers:denied.headers});
+   const denied=await oauth.denyConsent(request,form.handle);await env.OAUTH_KV.delete(key);const headers=new Headers(denied.headers);headers.append('set-cookie',cookieValue(browserCookie(handleDigest),'',0));return new Response(null,{status:302,headers});
   }
   const approved=await oauth.approveConsent(request,form.handle,{scope:scopes});
   if(approved.request.clientId!==saved.externalClientId)return json('Client connection changed',403);
   const completed=await oauth.completeAuthorization({request:approved.request,userId:member.id,metadata:{},scope:scopes,props:{memberId:member.id,clientId:saved.clientId}});
   await env.OAUTH_KV.delete(key);const headers=new Headers(approved.headers);headers.set('location',completed.redirectTo);headers.set('cache-control','no-store');
+  headers.append('set-cookie',cookieValue(browserCookie(handleDigest),'',0));
   return new Response(null,{status:302,headers});
  }
  return Object.freeze({async fetch(request,env,ctx){
