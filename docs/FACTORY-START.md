@@ -22,6 +22,15 @@ or automatic retry is allowed. A validated returned task ID is recorded immutabl
 even if pause/cancellation arrived during transport. Identity-storage failure
 returns that known ID to the trusted caller and retains the lock.
 
+The official start-response schema permits an omitted session count and specifies
+an integer without a positive minimum. Zero/omitted counts do not discard a
+validated identity. Unknown or malformed status metadata returns an uncertain
+result with the known identity preserved. `started: true` means the POST was
+acknowledged with that identity, not that a session is running or complete. Even
+a terminal-looking response leaves storage uncertain for independent inspection.
+See the start operation's 201 schema in the
+[official OpenAPI description](https://github.com/github/rest-api-description/blob/main/descriptions/api.github.com/api.github.com.json).
+
 There is no atomic transaction spanning D1 and an external HTTP request. A pause or
 revocation after the final check cannot prevent a request already crossing that
 boundary; cancellation remains a separate verified operational prerequisite.

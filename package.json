@@ -12,6 +12,7 @@
     "migrate:production": "wrangler d1 migrations apply jamula-family-coordinator --remote"
   },
   "dependencies": {
+    "@cloudflare/workers-oauth-provider": "1.2.4",
     "jose": "6.2.13"
   },
   "devDependencies": {

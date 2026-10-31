@@ -35,6 +35,26 @@ test('real provider composition persists uncertainty before exactly one POST and
  assert.equal(f.row().external_task_id,taskId);assert.equal(f.row().state,'uncertain');assert.equal(f.posts().length,1);
  assert.equal((await createFactoryStart(f.config).dispatch('owner',input)).state,'blocked');assert.equal(f.posts().length,1);
 });
+test('queued task with zero sessions retains the accepted immutable identity',async t=>{
+ const f=fixture(t),send=f.config.send;let posts=0;
+ f.config.send=async(url,options)=>{if(options.method==='GET')return send(url,options);posts++;return Response.json({...response(),session_count:0},{status:201});};
+ const controller=createFactoryStart(f.config);
+ assert.deepEqual(await controller.dispatch('owner',input),{state:'recorded',started:true,taskId});
+ assert.equal(f.row().external_task_id,taskId);assert.equal(f.row().state,'uncertain');
+ await controller.dispatch('owner',input);assert.equal(posts,1);
+});
+test('optional counts do not invent a minimum and uncertain metadata cannot discard verified identity',async t=>{
+ for(const variant of ['omitted','zero-terminal','negative','string','unknown-state']){
+  const f=fixture(t),send=f.config.send;const task=response();
+  if(variant==='omitted')delete task.session_count;
+  if(variant==='zero-terminal'){task.session_count=0;task.state='completed';}
+  if(variant==='negative')task.session_count=-1;if(variant==='string')task.session_count='0';if(variant==='unknown-state')task.state='unknown';
+  f.config.send=async(url,options)=>options.method==='GET'?send(url,options):Response.json(task,{status:201});
+  const result=await createFactoryStart(f.config).dispatch('owner',input);
+  assert.deepEqual(result,{state:['omitted','zero-terminal'].includes(variant)?'recorded':'uncertain',started:true,taskId},variant);
+  assert.equal(f.row().external_task_id,taskId);assert.equal(f.row().state,'uncertain');
+ }
+});
 test('independent connections and concurrent controllers start only one task',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'factory-start-')),path=join(dir,'claims.db');const a=new DatabaseSync(path),b=new DatabaseSync(path);
  t.after(()=>{a.close();b.close();rmSync(dir,{recursive:true,force:true});});a.exec(readFileSync(new URL('../scripts/factory-d1-schema.sql',import.meta.url),'utf8'));a.exec('UPDATE factory_claim_slot SET paused=0');let posts=0;

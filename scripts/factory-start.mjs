@@ -29,8 +29,12 @@ export function createFactoryStart({enabled=false,db,token,send=fetch,authorizeD
     try{for(;;){const {done,value}=await stream.read();if(done)break;bytes+=value.byteLength;if(bytes>131072)throw Error();text+=decoder.decode(value,{stream:true});}text+=decoder.decode();}
     catch(error){await stream.cancel().catch(()=>{});throw error;}finally{stream.releaseLock();}
     const task=JSON.parse(text);
-    if(typeof task?.id!=='string'||!uuid.test(task.id)||task.repository?.id!==repositoryId||task.url!==root+'/'+task.id||!['queued','in_progress','idle','waiting_for_user','completed','failed','cancelled','timed_out'].includes(task.state)||!Number.isSafeInteger(task.session_count)||task.session_count<1)throw Error();
-    return task.id;
+    if(typeof task?.id!=='string'||!uuid.test(task.id)||task.repository?.id!==repositoryId||task.url!==root+'/'+task.id)throw Error();
+    // The documented count is optional and has no positive minimum. Metadata
+    // cannot erase a verified identity or establish running/terminal evidence.
+    const metadataKnown=['queued','in_progress','idle','waiting_for_user','completed','failed','cancelled','timed_out'].includes(task.state)&&
+     (!Object.hasOwn(task,'session_count')||(Number.isSafeInteger(task.session_count)&&task.session_count>=0));
+    return {taskId:task.id,metadataKnown};
    })(),
    new Promise((_,reject)=>{timer=setTimeout(()=>{abort.abort();reject(Error());},timeoutMs);})
   ]);}finally{clearTimeout(timer);abort.abort();}
@@ -54,9 +58,9 @@ export function createFactoryStart({enabled=false,db,token,send=fetch,authorizeD
    if(await authorizeDispatch(session,request)!==true)return blocked();
    const current=await observeD1FactoryClaim(db);
    if(current.paused||current.cancelRequested||current.state!=='uncertain'||current.operationId!==operationId||current.scopeDigest!==scopeDigest||current.externalTaskId!==null)return blocked();
-   attempted=true;taskId=await start(request);
+   attempted=true;const accepted=await start(request);taskId=accepted.taskId;
    const recorded=await claims.recordTaskIdentity(operationId,scopeDigest,taskId);
-   return recorded?Object.freeze({state:'recorded',started:true,taskId}):uncertain({started:true,taskId});
+   return recorded&&accepted.metadataKnown?Object.freeze({state:'recorded',started:true,taskId}):uncertain({started:true,taskId});
   }catch{return attempted?uncertain(taskId?{started:true,taskId}:{}):blocked();}
  }});
 }

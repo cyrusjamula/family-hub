@@ -8,9 +8,9 @@ function canonical(value){
  try{const u=new URL(value);if(u.protocol!=='https:'||u.username||u.password||u.search||u.hash||u.toString()!==value||value.includes('"'))throw Error();return u;}
  catch{throw Error('Invalid MCP resource configuration');}
 }
-export function createMcpResourceBoundary({resource,issuer,verificationKey,resolveMember}={}){
+export function createMcpResourceBoundary({resource,issuer,verificationKey,resolveMember,resolveClient}={}){
  const resourceUrl=canonical(resource),issuerUrl=canonical(issuer);
- if(resourceUrl.pathname!=='/mcp'||issuerUrl.pathname!=='/'||!verificationKey||typeof resolveMember!=='function')throw Error('Invalid MCP resource configuration');
+ if(resourceUrl.pathname!=='/mcp'||issuerUrl.pathname!=='/'||!verificationKey||typeof resolveMember!=='function'||(resolveClient!==undefined&&typeof resolveClient!=='function'))throw Error('Invalid MCP resource configuration');
  const metadataUrl=resourceUrl.origin+'/.well-known/oauth-protected-resource/mcp';
  const challenge=`Bearer resource_metadata="${metadataUrl}"`;
  const deny=()=>new Response(null,{status:401,headers:{'www-authenticate':challenge,'cache-control':'no-store'}});
@@ -33,8 +33,16 @@ export function createMcpResourceBoundary({resource,issuer,verificationKey,resol
     // untrusted. Downstream handlers must enforce room and action permissions.
     const member=await resolveMember(payload.sub);
     if(!member||typeof member.id!=='string'||!member.id||!['owner','parent','child'].includes(member.role))return {response:deny()};
+    // A configured client resolver requires signed issuer-attested client identity.
+    // Never infer this from tool arguments, request headers, or token role claims.
+    let clientId;
+    if(resolveClient!==undefined){
+     if(typeof payload.client_id!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(payload.client_id)||
+        await resolveClient(member.id,payload.client_id)!==true)return {response:deny()};
+     clientId=payload.client_id;
+    }
     if(!scopes.includes(requiredScope))return {response:new Response(null,{status:403,headers:{'www-authenticate':`${challenge}, error="insufficient_scope", scope="${requiredScope}"`,'cache-control':'no-store'}})};
-    return {member:{id:member.id,role:member.role},scope:requiredScope};
+    return {member:{id:member.id,role:member.role,...(clientId===undefined?{}:{clientId})},scope:requiredScope};
    }catch{return {response:deny()};}
   }
  });
