@@ -24,3 +24,4 @@ jobs:
       - run: npm run ci
         env:
           WRANGLER_SEND_METRICS: 'false'
+          REQUIRE_CHROMIUM: 'true'
