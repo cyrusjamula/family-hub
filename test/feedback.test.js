@@ -24,7 +24,7 @@ test('feedback disabled, unauthenticated, unknown, and cross-origin requests fai
  assert.equal((await feedbackAPI(req('/submit',draft()),{DB:badDB},owner)).status,503);
  for(const user of [null,{id:'cyrus',role:'owner',email:'unknown@example.test'},{...child,role:'owner'}])assert.equal((await feedbackAPI(req(''),{DB:badDB,FEEDBACK_ENABLED:'true'},user)).status,403);
  assert.equal((await feedbackAPI(req('/submit',draft(),'https://evil.test'),{DB:badDB,FEEDBACK_ENABLED:'true'},child)).status,403);
- for(const user of [child,adult])for(const route of ['/preview','/publish','/reject'])assert.equal((await feedbackAPI(req(route,{id:crypto.randomUUID()}),{DB:badDB,FEEDBACK_ENABLED:'true'},user)).status,403);
+ for(const user of [child,adult])for(const route of ['/preview','/publish','/reject','/reconcile'])assert.equal((await feedbackAPI(req(route,{id:crypto.randomUUID()}),{DB:badDB,FEEDBACK_ENABLED:'true'},user)).status,403);
 });
 test('text feedback needs permission and does not collect unselected context, logs, names or screenshots',async()=>{
  const {sql,env,api}=fixture(),body={...draft(),includeContext:false,context:'parents',signInEmail:'not-trusted',log:'SECRET LOG',screenshot:null};
@@ -144,4 +144,59 @@ test('concurrent reuse of an ID with a different payload or reporter returns con
   const results=await Promise.all([api('/submit',body,child),api('/submit',otherPerson?body:{...body,details:'Different payload'},otherPerson?adult:child)]);
   assert.deepEqual(results.map(r=>r.status).sort(),[200,409]);assert.equal(sql.prepare('SELECT count(*) AS n FROM feedback').get().n,1);sql.close();
  }
+});
+
+async function uncertainFeedback(f){
+ const body=draft();await f.api('/submit',body,child);
+ const review={id:body.id,publicTitle:'Synthetic recovery',publicDetails:'Only synthetic recovery details'};
+ const preview=await (await f.api('/preview',review)).json();
+ assert.equal((await f.api('/publish',{...review,digest:preview.digest,confirmPublicIssue:true},owner,async()=>{throw Error('lost acknowledgement');})).status,502);
+ return {id:body.id,payload:preview.payload};
+}
+test('uncertain feedback links an exact existing issue with GET only and concurrent retries are idempotent',async()=>{
+ const f=fixture();try{
+  const {id,payload}=await uncertainFeedback(f);let calls=0;
+  const read=async(url,init)=>{calls++;assert.equal(url,'https://api.github.com/repos/cyrusjamula/family-hub/issues/73');assert.equal(init.method,'GET');assert.equal(init.redirect,'manual');assert.equal(init.body,undefined);return Response.json({...payload,number:73,html_url:'https://github.com/cyrusjamula/family-hub/issues/73'});};
+  const body={id,issueNumber:73,confirmExistingIssue:true};
+  const results=await Promise.all([f.api('/reconcile',body,owner,read),f.api('/reconcile',body,owner,read)]);
+  assert.deepEqual(results.map(r=>r.status),[200,200]);assert.equal(calls,2);
+  assert.equal(f.sql.prepare('SELECT state FROM feedback').get().state,'published');
+  assert.equal((await f.api('/reconcile',body)).status,200);
+  assert.equal((await f.api('/reconcile',{...body,issueNumber:74})).status,409);
+ }finally{f.sql.close();}
+});
+test('recovery rejects mismatched issues, redirects, denied and oversized reads without changing or resending',async()=>{
+ for(const failure of ['title','body','number','url','pull-request','redirect','denied','oversized','network']){
+  const f=fixture();try{
+   const {id,payload}=await uncertainFeedback(f);let calls=0;
+   const read=async(url,init)=>{calls++;assert.equal(init.method,'GET');
+    if(failure==='network')throw Error('sensitive provider details');
+    if(failure==='redirect')return new Response(null,{status:302});
+    if(failure==='denied')return new Response(null,{status:403});
+    const issue={...payload,number:73,html_url:'https://github.com/cyrusjamula/family-hub/issues/73'};
+    if(failure==='oversized')return Response.json({...issue,padding:'x'.repeat(131072)});
+    if(failure==='pull-request')issue.pull_request={};else issue[{title:'title',body:'body',number:'number',url:'html_url'}[failure]]='wrong';
+    return Response.json(issue);
+   };
+   const response=await f.api('/reconcile',{id,issueNumber:73,confirmExistingIssue:true},owner,read);
+   assert.equal(response.status,422,failure);assert.equal(calls,1);assert.equal(f.sql.prepare('SELECT state FROM feedback').get().state,'uncertain');assert.equal((await response.text()).includes('sensitive provider details'),false);
+  }finally{f.sql.close();}
+ }
+});
+test('recovery requires explicit confirmation and uncertain state before provider access',async()=>{
+ const f=fixture();try{
+  const body=draft();await f.api('/submit',body,child);
+  for(const input of [{id:body.id,issueNumber:73},{id:body.id,issueNumber:'73',confirmExistingIssue:true}])assert.equal((await f.api('/reconcile',input)).status,400);
+  assert.equal((await f.api('/reconcile',{id:body.id,issueNumber:73,confirmExistingIssue:true})).status,409);
+  const {id}=await uncertainFeedback(f);delete f.env.GITHUB_FEEDBACK_TOKEN;
+  assert.equal((await f.api('/reconcile',{id,issueNumber:73,confirmExistingIssue:true})).status,503);
+ }finally{f.sql.close();}
+});
+test('recovery cannot overwrite a concurrent change to the approved publication intent',async()=>{
+ const f=fixture();try{
+  const {id,payload}=await uncertainFeedback(f);
+  const read=async()=>{f.sql.prepare('UPDATE feedback SET public_payload=? WHERE id=?').run('changed',id);return Response.json({...payload,number:73,html_url:'https://github.com/cyrusjamula/family-hub/issues/73'});};
+  assert.equal((await f.api('/reconcile',{id,issueNumber:73,confirmExistingIssue:true},owner,read)).status,409);
+  assert.equal(f.sql.prepare('SELECT state,issue_url FROM feedback').get().state,'uncertain');assert.equal(f.sql.prepare('SELECT issue_url FROM feedback').get().issue_url,null);
+ }finally{f.sql.close();}
 });
