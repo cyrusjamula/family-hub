@@ -62,7 +62,7 @@ test('Markdown closing hashes and permitted indentation cannot disguise duplicat
 });
 
 test('approved scopes cannot rewrite AI identity/consent or shared recovery boundaries',()=>{
- for(const file of ['src/integrations/mcp-resource.js','src/integrations/mcp-task-grants.js','src/integrations/mcp-task-gateway.js','src/integrations/new-auth-boundary.js','src/integrations','src/integrations/','src/','src/factory-d1-claims.js','src/factory-d1-observe.js','scripts/factory-recovery.mjs','scripts/factory-d1-schema.sql']){
+ for(const file of ['src/integrations/mcp-resource.js','src/integrations/mcp-task-grants.js','src/integrations/mcp-task-gateway.js','src/integrations/new-auth-boundary.js','src/integrations','src/integrations/','src/','src/factory-d1-claims.js','src/factory-d1-observe.js','scripts/factory-recovery.mjs','scripts/factory-start.mjs','scripts/mcp-task-grant-schema.sql','scripts/mcp-consent-claim-schema.sql','scripts/factory-d1-schema.sql']){
   const plan=planFactory(snapshot([issue(1,file)]),now);
   assert.equal(plan.selected.length,0,file);assert.match(plan.blocked[0].reason,/protected/,file);
  }
