@@ -14,9 +14,11 @@ function sections(body){
 }
 function canonicalScope(path){
  if(typeof path!=='string'||!path||path!==path.trim()||!/^[A-Za-z0-9_.\/-]+$/.test(path)||path.includes('//'))throw Error('invalid file scope');
- const canonical=path.endsWith('/')?path.slice(0,-1):path;
+ const directory=path.endsWith('/'),canonical=directory?path.slice(0,-1):path;
  if(canonical.split('/').some(segment=>!segment||segment==='.'||segment==='..'))throw Error('invalid file scope');
- return canonical;
+ // Keep an explicit directory marker so a file scope cannot be widened by
+ // treating `name.js` as a parent directory for `name.js/extra.js`.
+ return directory?canonical+'/':canonical;
 }
 export function issueWorkScope(issue){
  if(typeof issue.title!=='string'||typeof issue.body!=='string'||!Number.isSafeInteger(issue.number)||issue.number<1)throw Error('invalid issue');
