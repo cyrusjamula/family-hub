@@ -5,6 +5,9 @@ import {jwtVerify} from 'jose';
 // Callers inject a local verification key; never use a production key here.
 export const syntheticIssuer='https://issuer.example.test';
 export const syntheticAudience='https://resource.example.test/mcp';
+const MAX_TOKEN_AGE='5m';
+const MAX_TOKEN_LIFETIME_SECONDS=300;
+const ISSUED_AT_CLOCK_SKEW_SECONDS=5;
 const members=Object.freeze({'synthetic-owner':'owner','synthetic-parent':'parent','synthetic-child':'child'});
 const policies=Object.freeze({
  family_read:{scope:'synthetic:read',roles:['owner','parent','child']},
@@ -24,7 +27,13 @@ export function createSyntheticResource({verificationKey}={}){
    let claims;
    try{
     ({payload:claims}=await jwtVerify(authorization.slice(7),verificationKey,{algorithms:['ES256'],
-     issuer:syntheticIssuer,audience:syntheticAudience,requiredClaims:['sub','exp','iat']}));
+     issuer:syntheticIssuer,audience:syntheticAudience,requiredClaims:['sub','exp','iat'],
+     maxTokenAge:MAX_TOKEN_AGE,clockTolerance:ISSUED_AT_CLOCK_SKEW_SECONDS}));
+    const now=Math.floor(Date.now()/1000);
+    if(!Number.isSafeInteger(claims.iat)||!Number.isSafeInteger(claims.exp)||
+      claims.iat>now+ISSUED_AT_CLOCK_SKEW_SECONDS||
+      claims.exp<=now||
+      claims.exp<=claims.iat||claims.exp-claims.iat>MAX_TOKEN_LIFETIME_SECONDS)return denied();
    }catch{return denied();}
    const role=Object.hasOwn(members,claims.sub)?members[claims.sub]:undefined;
    const policy=typeof operation==='string'&&Object.hasOwn(policies,operation)?policies[operation]:undefined;
