@@ -17,7 +17,7 @@ If a gate is missing, record the blocker privately and stop. Keep the issue open
 
 ## Session checklist
 
-Use the planned Singapore trip only as the family context. Keep actual dates, flight details, hotel, home address, named assignments, account identifiers, screenshots and private conversation content in the participants' private AI sessions. Do not paste them into this public repository. For public-source research, each participant can investigate a harmless activity or a public layover option without disclosing the itinerary.
+Use a generic family travel-planning scenario as the session context. Keep actual dates, destination, flight details, hotel, home address, named assignments, account identifiers, screenshots and private conversation content in the participants' private AI sessions. Do not paste them into this public repository. For public-source research, each participant can investigate a harmless activity or a public layover option without disclosing an actual itinerary.
 
 1. **Verify the client and identity.** Each participant independently opens the selected AI and authenticates using their own account. Check that the Hub recognizes the expected role and only offers that role's allowed rooms. Record the result privately; publish only a sanitized participant label and pass/block status.
 2. **Retrieve one assigned task.** Ask the AI to retrieve the shared pilot task and its current version from the connected coordination service. Confirm the returned task ID, audience, version and sources match what the owner prepared. Do not treat a generated answer as proof of retrieval.
