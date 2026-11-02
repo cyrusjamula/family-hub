@@ -18,10 +18,10 @@ async function client({capture=async()=>null,autoOpen=true}={}){
  }
  for(const match of html.matchAll(/<([\w-]+)\b([^>]*\bid="([^"]+)"[^>]*)>/g)){const el=new Element(match[1]);el.hidden=/\bhidden\b/.test(match[2]);el.disabled=/\bdisabled\b/.test(match[2]);elements[match[3]]=el;}
  const triage=new Element('details');
- const document={getElementById:id=>elements[id],createElement:tag=>new Element(tag),createTextNode:text=>String(text),querySelector:selector=>selector==='#feedback-dialog details.panel'?triage:{dataset:{view:'chat'}}};
+ const document={getElementById:id=>elements[id],createElement:tag=>new Element(tag),createTextNode:text=>String(text),dispatchEvent:event=>{events.push(event.type);return true;},querySelector:selector=>selector==='#feedback-dialog details.panel'?triage:{dataset:{view:'chat'}}};
  class SafeURL extends URL{static createObjectURL(){const url='blob:synthetic-'+objects.length;objects.push(url);return url;}static revokeObjectURL(url){objects.push('revoked:'+url);}}
- const sandbox={document,AbortSignal,captureFeedbackPage:async()=>{events.push('capture');return capture();},window:{location:{hash:''},addEventListener(){}},crypto,URL:SafeURL,Uint8Array,btoa,createImageBitmap:async()=>({width:1,height:1,close(){}}),fetch:async(url,options={})=>{
-  const body=options.body?JSON.parse(options.body):undefined;const entry={url,body};requests.push(entry);const override=await intercept?.(entry);if(override)return override;
+ const sandbox={document,Event,AbortSignal,captureFeedbackPage:async()=>{events.push('capture');return capture();},window:{location:{hash:''},addEventListener(){}},crypto,URL:SafeURL,Uint8Array,btoa,createImageBitmap:async()=>({width:1,height:1,close(){}}),fetch:async(url,options={})=>{
+  const body=options.body?JSON.parse(options.body):undefined;const entry={url,body,options};requests.push(entry);const override=await intercept?.(entry);if(override)return override;
   if(url==='/api/me')return Response.json({id:'iyanah',name:'Iyanah',role:'child'});
   if(url.endsWith('/config'))return Response.json({enabled:true});
   if(url.endsWith('/submit'))return Response.json({id:body.id,state:'pending'});
@@ -179,4 +179,14 @@ test('disabled feedback setup is explicit and prevents the normal save controls'
 });
 test('closing or starting a new report drops the captured page',async()=>{
  const page={type:'image/jpeg',size:12};for(const button of ['feedback-close','feedback-new']){const c=await client({capture:async()=>page});assert.equal(c.hooks.getPage(),page);c.elements[button].onclick();assert.equal(c.hooks.getPage(),null);assert.equal(c.elements['feedback-screenshot-source'].value,'none');}
+});
+
+test('feedback auth expiry locks the shared app, while a room 403 does not signal session loss',async()=>{
+ for(const status of [401,403]){
+  const c=await client();c.setIntercept(({url})=>url.startsWith('/api/feedback?')?Response.json({error:'Access denied'},{status}):undefined);
+  await assert.rejects(c.hooks.listFeedback());
+  assert.equal(c.events.includes('hub-session-locked'),status===401);
+  assert.equal(c.requests.at(-1).url.startsWith('/api/feedback?'),true);
+  assert.equal(c.requests.at(-1).options.redirect,'manual');
+ }
 });

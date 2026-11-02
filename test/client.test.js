@@ -27,7 +27,7 @@ async function client(person={name:'Owner',role:'owner',aiEnabled:true}){
  let intercept=null,messages={family:[{author:'Family',content:'Family current'}],parents:[{author:'Parent',content:'Parents current'}]},approvals={family:[],parents:[]};
  const response=value=>new Response(JSON.stringify(value),{headers:{'content-type':'application/json'}});
  const sandbox={document,window:{location:{reload(){}}},navigator:{},Intl,Date,URL,Option:class extends Element{},setInterval:fn=>{intervals.push(fn);},fetch:async(url,options={})=>{
-  const u=new URL(url,'https://hub.test'),entry={path:u.pathname,room:u.searchParams.get('room'),body:options.body?JSON.parse(options.body):undefined};requests.push(entry);
+  const u=new URL(url,'https://hub.test'),entry={path:u.pathname,room:u.searchParams.get('room'),body:options.body?JSON.parse(options.body):undefined,options};requests.push(entry);
   const overridden=await intercept?.(entry);if(overridden)return overridden;
   const route=u.pathname.slice(5);return response(route==='me'?person:route==='google/status'?{configured:false,connected:false}:route==='messages'?messages[entry.room]:route==='approvals'?approvals[entry.room]:[]);
  }};
@@ -78,7 +78,7 @@ test('parent and child views hide owner controls and cannot open Advanced',async
  }
 });
 test('authentication denial or a login HTML response removes private UI and blocks stale requests',async()=>{
- for(const response of [()=>Response.json({error:'Sign in again'},{status:401}),()=>Response.json({error:'Room access denied'},{status:403}),()=>new Response('<html>Access login</html>',{headers:{'content-type':'text/html'}})]){
+ for(const response of [()=>Response.json({error:'Sign in again'},{status:401}),()=>new Response('<html>Access login</html>',{headers:{'content-type':'text/html'}})]){
   const c=await client();await c.switchRoom('parents');c.draft('Unsent private fixture');
   c.elements['private-answer'].textContent='Private answer fixture';
   c.setIntercept(r=>r.path==='/api/messages'?response():null);
@@ -88,9 +88,18 @@ test('authentication denial or a login HTML response removes private UI and bloc
   const before=c.requests.length;await assert.rejects(c.hooks.refresh());assert.equal(c.requests.length,before);
  }
 });
+test('a room authorization 403 is an ordinary denial and does not lock or erase the session',async()=>{
+ const c=await client();await c.switchRoom('parents');c.draft('Keep this private draft');
+ c.setIntercept(r=>r.path==='/api/messages'&&r.room==='parents'?Response.json({error:'Room access denied'},{status:403}):null);
+ await assert.rejects(c.hooks.refresh(),/Room access denied/);
+ assert.match(c.document.body.textContent,/Welcome, Owner/);assert.doesNotMatch(c.document.body.textContent,/Verify your sign-in/);
+ assert.equal(c.hooks.getRoom(),'parents');assert.equal(c.elements.content.value,'Keep this private draft');
+ const request=c.requests.find(r=>r.path==='/api/messages'&&r.room==='parents');
+ assert.equal(request.options.credentials,'same-origin');assert.equal(request.options.cache,'no-store');assert.equal(request.options.redirect,'manual');
+});
 test('a late private response cannot repopulate a page after session lock',async()=>{
  const c=await client();await c.switchRoom('parents');const gate=deferred();let held=false;
- c.setIntercept(r=>{if(r.path!=='/api/messages')return null;if(!held){held=true;return gate.promise;}return Response.json({error:'Session changed'},{status:403});});
+ c.setIntercept(r=>{if(r.path!=='/api/messages')return null;if(!held){held=true;return gate.promise;}return Response.json({error:'Session changed'},{status:401});});
  const old=c.hooks.refresh();await tick();await assert.rejects(c.hooks.refresh());
  gate.resolve(c.response([{author:'Parent',content:'Late private fixture'}]));await old.catch(()=>{});
  assert.doesNotMatch(c.document.body.textContent,/Late private fixture|Parents current/);assert.match(c.document.body.textContent,/Reload/);
