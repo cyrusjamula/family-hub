@@ -17,7 +17,7 @@ async function call(path,body,requestRoom=room){
  if(sessionLocked)throw Error(sessionNotice);
  const r=await fetch('/api/'+path.split('&')[0]+(path==='me'?'':'?room='+requestRoom+(path.includes('&')?'&'+path.split('&').slice(1).join('&'):'')),{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',redirect:'manual',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
  if(sessionLocked)throw Error(sessionNotice);
- if(r.status===401||r.status>=300&&r.status<400||r.redirected||r.headers.get('content-type')?.includes('text/html')){await r.body?.cancel().catch(()=>{});lockSession();throw Error(sessionNotice);}
+ if(r.type==='opaqueredirect'||r.status===401||r.status>=300&&r.status<400||r.redirected||r.headers.get('content-type')?.includes('text/html')){await r.body?.cancel().catch(()=>{});lockSession();throw Error(sessionNotice);}
  const data=await r.json();if(sessionLocked)throw Error(sessionNotice);if(!r.ok)throw Error(data.error||'Request failed');return data;
 }
 function p(text){const el=document.createElement('p');el.textContent=text;return el;}

@@ -78,7 +78,7 @@ test('parent and child views hide owner controls and cannot open Advanced',async
  }
 });
 test('authentication denial or a login HTML response removes private UI and blocks stale requests',async()=>{
- for(const response of [()=>Response.json({error:'Sign in again'},{status:401}),()=>new Response('<html>Access login</html>',{headers:{'content-type':'text/html'}})]){
+ for(const response of [()=>Response.json({error:'Sign in again'},{status:401}),()=>new Response('<html>Access login</html>',{headers:{'content-type':'text/html'}}),()=>({type:'opaqueredirect',status:0,redirected:false,headers:new Headers(),body:null,json(){throw Error('opaque redirect body must not be read');}})]){
   const c=await client();await c.switchRoom('parents');c.draft('Unsent private fixture');
   c.elements['private-answer'].textContent='Private answer fixture';
   c.setIntercept(r=>r.path==='/api/messages'?response():null);

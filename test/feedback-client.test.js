@@ -182,11 +182,17 @@ test('closing or starting a new report drops the captured page',async()=>{
 });
 
 test('feedback auth expiry locks the shared app, while a room 403 does not signal session loss',async()=>{
- for(const status of [401,403]){
-  const c=await client();c.setIntercept(({url})=>url.startsWith('/api/feedback?')?Response.json({error:'Access denied'},{status}):undefined);
+ for(const status of [401,403,'opaque']){
+  const c=await client();c.setIntercept(({url})=>url.startsWith('/api/feedback?')?status==='opaque'?{type:'opaqueredirect',status:0,redirected:false,headers:new Headers(),body:null,json(){throw Error('opaque redirect body must not be read');}}:Response.json({error:'Access denied'},{status}):undefined);
   await assert.rejects(c.hooks.listFeedback());
-  assert.equal(c.events.includes('hub-session-locked'),status===401);
+  assert.equal(c.events.includes('hub-session-locked'),status==='opaque'||status===401);
   assert.equal(c.requests.at(-1).url.startsWith('/api/feedback?'),true);
   assert.equal(c.requests.at(-1).options.redirect,'manual');
  }
+});
+
+test('an opaque login redirect on initial identity lookup requests the shared session lock',async()=>{
+ const c=await client({autoOpen:false});
+ c.setIntercept(({url})=>url==='/api/me'?{type:'opaqueredirect',status:0,redirected:false,headers:new Headers(),body:null,json(){throw Error('opaque redirect body must not be read');}}:undefined);
+ await assert.rejects(c.hooks.openFeedback());assert.equal(c.events.includes('hub-session-locked'),true);
 });

@@ -35,7 +35,7 @@ let feedbackMe,feedbackId=null,feedbackContext='unspecified',feedbackDraft=null,
 function feedbackAuthExpired(){document.dispatchEvent(new Event('hub-session-locked'));}
 async function feedbackRequest(route,body){
  let response;try{response=await fetch('/api/feedback'+route,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined,redirect:'manual',signal:AbortSignal.timeout(15000)});}catch{throw Error('Feedback could not be confirmed. Keep your draft and retry the same report after checking your connection or sign-in.');}
- if(response.status===401||response.status>=300&&response.status<400||response.redirected||response.headers.get('content-type')?.includes('text/html')){await response.body?.cancel().catch(()=>{});feedbackAuthExpired();throw Error('Sign in to the Hub again, then retry this same report. Your draft has not been cleared.');}
+ if(response.type==='opaqueredirect'||response.status===401||response.status>=300&&response.status<400||response.redirected||response.headers.get('content-type')?.includes('text/html')){await response.body?.cancel().catch(()=>{});feedbackAuthExpired();throw Error('Sign in to the Hub again, then retry this same report. Your draft has not been cleared.');}
  let data;try{data=await response.json();}catch{throw Error('Feedback could not be confirmed. Keep your draft and retry the same report.');}
  if(!response.ok)throw Error(data.error||'Feedback request failed. Your draft has not been cleared.');return data;
 }
@@ -61,7 +61,7 @@ async function openFeedback(id){
  const ticket=++feedbackOpening,dialog=feedbackEl('feedback-dialog');feedbackAvailable=false;
  try{
   const response=await fetch('/api/me',{cache:'no-store',credentials:'same-origin',redirect:'manual',signal:AbortSignal.timeout(15000)});
-  if(response.status===401||response.status>=300&&response.status<400||response.redirected||response.headers.get('content-type')?.includes('text/html')){await response.body?.cancel().catch(()=>{});feedbackAuthExpired();throw Error('Sign in to the Hub to save feedback. Your draft stays here.');}
+  if(response.type==='opaqueredirect'||response.status===401||response.status>=300&&response.status<400||response.redirected||response.headers.get('content-type')?.includes('text/html')){await response.body?.cancel().catch(()=>{});feedbackAuthExpired();throw Error('Sign in to the Hub to save feedback. Your draft stays here.');}
   if(!response.ok||!response.headers.get('content-type')?.includes('application/json'))throw Error('Sign in to the Hub to save feedback. Your draft stays here.');
   feedbackMe=await response.json();
   const shown=feedbackEl('identity')?.textContent;
