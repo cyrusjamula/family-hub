@@ -13,11 +13,21 @@ function lockSession(){
  const reload=document.createElement('button');reload.type='button';reload.textContent='Reload and verify account';reload.onclick=()=>window.location.reload();
  panel.append(heading,notice,reload);document.body.replaceChildren(panel);
 }
+async function sameVerifiedIdentity(){
+ try{
+  const r=await fetch('/api/me',{method:'GET',credentials:'same-origin',cache:'no-store',redirect:'manual'});
+  if(sessionLocked||r.type==='opaqueredirect'||r.status!==200||!r.headers.get('content-type')?.includes('application/json')){await r.body?.cancel().catch(()=>{});return false;}
+  const current=await r.json();
+  return !sessionLocked&&current?.id===me?.id&&current?.role===me?.role;
+ }catch{return false;}
+}
 async function call(path,body,requestRoom=room){
  if(sessionLocked)throw Error(sessionNotice);
- const r=await fetch('/api/'+path.split('&')[0]+(path==='me'?'':'?room='+requestRoom+(path.includes('&')?'&'+path.split('&').slice(1).join('&'):'')),{method:body?'POST':'GET',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+ const r=await fetch('/api/'+path.split('&')[0]+(path==='me'?'':'?room='+requestRoom+(path.includes('&')?'&'+path.split('&').slice(1).join('&'):'')),{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',redirect:'manual',headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
  if(sessionLocked)throw Error(sessionNotice);
- if(r.status===401||r.status===403||r.redirected||r.ok&&r.headers.get('content-type')?.includes('text/html')){lockSession();throw Error(sessionNotice);}
+ if(r.type==='opaqueredirect'||r.status===401||r.status>=300&&r.status<400||r.redirected||r.headers.get('content-type')?.includes('text/html')){await r.body?.cancel().catch(()=>{});lockSession();throw Error(sessionNotice);}
+ if(r.status===403&&path!=='me'&&!await sameVerifiedIdentity()){lockSession();throw Error(sessionNotice);}
+ if(sessionLocked)throw Error(sessionNotice);
  const data=await r.json();if(sessionLocked)throw Error(sessionNotice);if(!r.ok)throw Error(data.error||'Request failed');return data;
 }
 function p(text){const el=document.createElement('p');el.textContent=text;return el;}

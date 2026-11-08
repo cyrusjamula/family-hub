@@ -10,7 +10,7 @@ function harness(person={id:'cyrus',role:'owner'},override){
   requests.push({path,options});const changed=await override?.(path,requests.length);if(changed)return changed;
   if(path==='/api/me')return Response.json(person);
   const denied=(path.includes('parents')&&person.role==='child')||(!path.includes('messages')&&person.role!=='owner');
-  return {status:denied?403:200,body:{cancel:async()=>cancelled.push(path)},json(){throw Error('Private JSON must not be read');},text(){throw Error('Private text must not be read');}};
+  return {status:denied?403:200,headers:new Headers({'content-type':'application/json'}),body:{cancel:async()=>cancelled.push(path)},json(){throw Error('Private JSON must not be read');},text(){throw Error('Private text must not be read');}};
  };
  vm.runInNewContext(source,{document:{getElementById:id=>elements[id],createElement:()=>new Element()},fetch,AbortSignal});
  return {elements,requests,cancelled,run:()=>elements['run-check'].onclick()};
@@ -18,13 +18,21 @@ function harness(person={id:'cyrus',role:'owner'},override){
 test('access checks require a click and discard every private response for all roles',async()=>{
  for(const person of [{id:'cyrus',role:'owner'},{id:'anhaita',role:'parent'},{id:'iyanah',role:'child'},{id:'aarish',role:'child'}]){
   const h=harness(person);assert.equal(h.requests.length,0);await h.run();assert.equal(h.requests.length,6);assert.equal(h.cancelled.length,5);assert.match(h.elements['check-status'].textContent,/5 of 5 checks passed/);assert.match(h.elements['check-identity'].textContent,new RegExp(person.role));
-  for(const {options} of h.requests){assert.equal(options.method,'GET');assert.equal(options.credentials,'same-origin');assert.equal(options.redirect,'error');assert.equal(options.cache,'no-store');assert.equal(options.body,undefined);assert.ok(options.signal instanceof AbortSignal);}
+  for(const {options} of h.requests){assert.equal(options.method,'GET');assert.equal(options.credentials,'same-origin');assert.equal(options.redirect,'manual');assert.equal(options.cache,'no-store');assert.equal(options.body,undefined);assert.ok(options.signal instanceof AbortSignal);}
  }
 });
 test('unexpected private success cancels body and stops before more probes',async()=>{
  let cancelled=false;
- const h=harness({id:'iyanah',role:'child'},path=>path.includes('parents')?{status:200,body:{cancel:async()=>{cancelled=true;}},json(){throw Error('Never parse private data');}}:undefined);
+ const h=harness({id:'iyanah',role:'child'},path=>path.includes('parents')?{status:200,headers:new Headers({'content-type':'application/json'}),body:{cancel:async()=>{cancelled=true;}},json(){throw Error('Never parse private data');}}:undefined);
  await h.run();assert.equal(cancelled,true);assert.equal(h.requests.length,3);assert.match(h.elements['check-status'].textContent,/Stopped: Parents private conversation/);assert.equal(h.elements['check-results'].children[1].children[3].textContent,'FAIL');
+});
+test('each successful access probe must return JSON before it can count as passing',async()=>{
+ let cancelled=false;
+ const h=harness({id:'cyrus',role:'owner'},path=>path==='/api/actions'?{status:200,headers:new Headers({'content-type':'text/html'}),body:{cancel:async()=>{cancelled=true;}},json(){throw Error('Never read a login page');}}:undefined);
+ await h.run();assert.equal(cancelled,true);assert.equal(h.requests.length,5);
+ assert.match(h.elements['check-status'].textContent,/Stopped: Owner external actions/);
+ assert.equal(h.elements['check-results'].children[3].children[2].textContent,'200 · non-JSON');
+ assert.equal(h.elements['check-results'].children[3].children[3].textContent,'FAIL');
 });
 test('unknown or inconsistent identities stop before protected probes',async()=>{
  for(const person of [{id:'unknown',role:'owner'},{id:'iyanah',role:'owner'},{id:'cyrus',role:'child'}]){const h=harness(person);await h.run();assert.equal(h.requests.length,1);assert.equal(h.elements['check-identity'].textContent,'');assert.match(h.elements['check-status'].textContent,/could not finish/);}
