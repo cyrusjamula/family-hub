@@ -46,6 +46,10 @@ export function createMcpTaskGateway({resource,boundary,backend}={}){
   if(request.url===metadata&&request.method==='GET')return boundary.metadata();
   if(request.url!==resource)return error(null,-32600,'Not found',404);
   if(request.method!=='POST')return error(null,-32600,'Method not allowed',405);
+  // Native clients may omit Origin. Browser requests must originate from this
+  // exact resource origin; reject before consuming a body or invoking auth.
+  const origin=request.headers.get('origin');
+  if(origin!==null&&origin!==url.origin)return error(null,-32600,'Origin rejected',403);
   if(!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(request.headers.get('content-type')||''))return error(null,-32600,'JSON required',415);
   let rpc;try{rpc=await boundedBody(request);}catch{return error(null,-32700,'Invalid or oversized JSON',400);}
   if(!object(rpc)||rpc.jsonrpc!=='2.0'||typeof rpc.method!=='string'||!Object.hasOwn(rpc,'id')||

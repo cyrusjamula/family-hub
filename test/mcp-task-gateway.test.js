@@ -74,3 +74,27 @@ test('read-only backend advertises no writes and rejects direct writes before di
  assert.equal((await read.json()).result.structuredContent.ok,true);assert.equal(calls.length,1);
  assert.throws(()=>createMcpTaskGateway({resource,boundary,backend:{read:async()=>({ok:true}),propose:null}}));
 });
+
+test('untrusted browser origins are rejected before authorization, body reads or task dispatch',async()=>{
+ let authorizations=0,bodyReads=0;
+ const boundary={metadata:()=>new Response(),authorize:async(_request,scope)=>{
+  authorizations++;return {member:{id:'fictional',role:'child'},scope};
+ }};
+ const gateway=createMcpTaskGateway({resource,boundary,backend:{read:async()=>({ok:true})}});
+ for(const origin of ['https://untrusted.example','null','https://fixture.example.evil.test','http://fixture.example','https://fixture.example:8443','https://fixture.example/','https://fixture.example https://untrusted.example']){
+  const req=makeRequest('synthetic','tools/call','task_read',{taskId:'t'});
+  req.headers.set('origin',origin);
+  const getReader=req.body.getReader.bind(req.body);
+  req.body.getReader=()=>{bodyReads++;return getReader();};
+  const response=await gateway.handle(req);
+  assert.equal(response.status,403,origin);
+  assert.equal(response.headers.get('cache-control'),'no-store');
+ }
+ assert.equal(authorizations,0);assert.equal(bodyReads,0);
+ for(const origin of [undefined,'https://fixture.example']){
+  const req=makeRequest('synthetic','tools/call','task_read',{taskId:'t'});
+  if(origin!==undefined)req.headers.set('origin',origin);
+  assert.equal((await gateway.handle(req)).status,200);
+ }
+ assert.equal(authorizations,2);
+});
